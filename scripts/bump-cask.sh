@@ -12,10 +12,10 @@ cask "sonar" do
   version "$VERSION"
   sha256 "$SHA"
 
-  url "https://github.com/you/sonar/releases/download/v#{version}/Sonar-#{version}.zip"
+  url "https://github.com/Kathir-D/Sonar/releases/download/v#{version}/Sonar-#{version}.zip"
   name "Sonar"
   desc "Spotify in your macOS menu bar, with hybrid auto-pause"
-  homepage "https://github.com/you/sonar"
+  homepage "https://github.com/Kathir-D/Sonar"
 
   depends_on macos: ">= :sequoia"
   conflicts_with cask: "spotmenu"

@@ -60,7 +60,7 @@
 - Do: new pane (mode radio, sliders + numeric for active/quiet/fade/threshold, all-except vs watched-only lists, recent-sources 3-min finder, menu-dot state, diagnostics countdown + last-result + permission hints, bounded `~/Library/Logs/Sonar/` log).
 - Done when: prefs persist in UserDefaults, Save restarts tap only when rules change.
 
-### [ ] 9. `docs: README + NOTICES final`
+### [x] 9. `docs: README + NOTICES final`
 - Why: fresh rewrite + provenance required.
 - Do: fill demo gif, install, permissions table, usage, building, Credits table with final SHAs.
 - Done when: README matches implementation, NOTICES has full MIT texts.

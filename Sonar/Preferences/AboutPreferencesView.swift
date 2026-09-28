@@ -150,8 +150,7 @@ struct AboutPreferencesView: View {
                 // Links
                 VStack(spacing: 12) {
                     Button(action: {
-                        // Owner: replace `you` with the real GitHub user/org.
-                        if let url = URL(string: "https://github.com/you/sonar") {
+                        if let url = URL(string: "https://github.com/Kathir-D/Sonar") {
                             NSWorkspace.shared.open(url)
                         }
                     }) {

@@ -23,7 +23,7 @@
 	<key>SUPublicEDKey</key>
 	<string>BzDKlhTkBhiTizw1GoS4Lxq7rWs7fh2vZuHz3OojDuE=</string>
 	<key>SUFeedURL</key>
-	<string>https://github.com/you/sonar/releases/latest/download/appcast.xml</string>
+	<string>https://github.com/Kathir-D/Sonar/releases/latest/download/appcast.xml</string>
 	<!-- Enable Sparkle's Installer XPC Service for sandboxed updates -->
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
