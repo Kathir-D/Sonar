@@ -83,20 +83,28 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
     /// queue; safe to call every tick (no-ops while already owned).
     public func duck(source: String) {
         nextGeneration()
-        queue.async { [weak self] in self?.duckSync(source: source) }
+        // autoreleasepool: the AppleEvent round trip returns autoreleased
+        // descriptors and this queue is a GCD worker thread.
+        queue.async { [weak self] in
+            autoreleasepool { self?.duckSync(source: source) }
+        }
     }
 
     /// Restore Spotify after quiet. Async; no-ops unless owned.
     public func restore() {
         nextGeneration()
-        queue.async { [weak self] in self?.restoreSync() }
+        queue.async { [weak self] in
+            autoreleasepool { self?.restoreSync() }
+        }
     }
 
     /// Per-tick reconciliation while idle or owned: detects manual resume /
     /// manual volume change / pid change and relinquishes. Call from the
     /// engine tick; sync (cheap) — performs at most two AppleScript reads.
     public func reconcile() {
-        queue.async { [weak self] in self?.reconcileSync() }
+        queue.async { [weak self] in
+            autoreleasepool { self?.reconcileSync() }
+        }
     }
 
     /// Synchronous variants for tests (run on the calling thread).

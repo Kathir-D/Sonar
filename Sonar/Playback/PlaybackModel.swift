@@ -92,13 +92,6 @@ class PlaybackModel: ObservableObject {
     private let preferences: MusicPlayerPreferencesModel
     private var controller: MusicPlayerController
     private var timer: Timer?
-    // AppleScript round trips run here, serialized and off the main
-    // thread: a slow or hung Spotify must never block the menu bar.
-    private let fetchQueue = DispatchQueue(
-        label: "com.KathirD.sonar.playback-fetch",
-        qos: .userInitiated
-    )
-    private var fetchInFlight = false
 
     private var cancellable: AnyCancellable?
 
@@ -155,14 +148,15 @@ class PlaybackModel: ObservableObject {
     }
 
     func fetchInfo() {
-        // The 2s timer must not queue up faster than Spotify can answer,
-        // so drop a poll that would overlap the one already in flight.
-        fetchQueue.async { [weak self] in
-            guard let self, !self.fetchInFlight else { return }
-            self.fetchInFlight = true
-            defer { self.fetchInFlight = false }
-            self.fetchAndApply()
-        }
+        // Runs on the caller (main) thread on purpose. NSAppleScript is not
+        // reliable off the main thread: polling it from a GCD worker queue
+        // survived a while and then died with EXC_BAD_ACCESS in the parsed
+        // strings, repeatedly, with an autoreleasepool and cross-thread
+        // locking in place. The original "menu bar freezes forever" problem
+        // was never about the thread - it was the missing `with timeout of 4
+        // seconds`, which runAppleScript now applies, so the worst case here
+        // is a 4s stall when Spotify is unresponsive instead of 2 minutes.
+        fetchAndApply()
     }
 
     private func fetchAndApply() {

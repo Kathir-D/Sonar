@@ -82,22 +82,28 @@ public final class AutoPauseController: @unchecked Sendable {
 
     /// One engine tick. Public + synchronous for tests.
     public func tick() {
-        guard enabled else { return }
-        let pollSignal = poll.refresh()
-        let tapSignal = tapIsUsable ? tap?.latestSignal : nil
-        let decision = fusion.evaluate(poll: pollSignal, tap: tapSignal)
-        switch decision {
-        case .candidate(let source):
-            if !candidateAnnounced {
-                candidateAnnounced = true
-                onEvent?(.candidate(source: source))
+        // The engine queue is a GCD worker thread, and the poll scan plus the
+        // AppleEvent reads hand back autoreleased objects (NSAppleScript
+        // descriptors, NSRunningApplication results). Without a pool they get
+        // over-released and the next tick reads freed memory.
+        autoreleasepool {
+            guard enabled else { return }
+            let pollSignal = poll.refresh()
+            let tapSignal = tapIsUsable ? tap?.latestSignal : nil
+            let decision = fusion.evaluate(poll: pollSignal, tap: tapSignal)
+            switch decision {
+            case .candidate(let source):
+                if !candidateAnnounced {
+                    candidateAnnounced = true
+                    onEvent?(.candidate(source: source))
+                }
+                adapter.duckSync(source: source)
+            case .quiet:
+                candidateAnnounced = false
+                adapter.restoreSync()
+            case .hold:
+                if shouldReconcile() { adapter.reconcileSync() }
             }
-            adapter.duckSync(source: source)
-        case .quiet:
-            candidateAnnounced = false
-            adapter.restoreSync()
-        case .hold:
-            if shouldReconcile() { adapter.reconcileSync() }
         }
     }
 
