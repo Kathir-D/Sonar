@@ -4,37 +4,58 @@ import Foundation
 public enum FusionDecision: Sendable, Equatable {
     /// Another app is loud: candidate for fade + pause.
     case candidate(source: String)
-    /// All quiet long enough (and Spotify not independently playing):
-    /// candidate for resume.
+    /// All quiet long enough: candidate for resume (the adapter still
+    /// applies the Spotify-state veto before touching playback).
     case quiet
     /// Hold current state.
     case hold
 }
 
-/// OR-active / AND-quiet fusion state machine (skeleton).
+/// OR-active / AND-quiet fusion state machine.
 ///
-/// Rule (final, task 7): either detector loud for >= activeDuration
-/// becomes a pause candidate; both detectors quiet for >= quietDuration
-/// plus `isPlaying() == false` veto becomes a resume candidate.
-///
-/// Modes: Fade+Pause / Instant / Mute-only (task 7+8).
+/// Rule: either detector loud continuously for >= activeDuration becomes a
+/// pause candidate; both detectors quiet continuously for >= quietDuration
+/// becomes a resume candidate. Any loud sample resets the quiet streak and
+/// vice versa. Pure value type with injected `now` — fully unit-testable.
 public struct FusionState: Sendable {
-    /// Seconds a signal must stay active before it becomes a candidate.
+    /// Seconds a signal must stay loud before it becomes a candidate.
     public var activeDuration: TimeInterval
     /// Seconds all signals must stay quiet before resume.
     public var quietDuration: TimeInterval
+
+    private var loudSince: Date?
+    private var quietSince: Date?
 
     public init(activeDuration: TimeInterval = 1.0, quietDuration: TimeInterval = 3.0) {
         self.activeDuration = activeDuration
         self.quietDuration = quietDuration
     }
 
-    /// Evaluate current detector signals. Full logic lands in task 7.
-    public func evaluate(poll: AudioSignal?, tap: AudioSignal?, now: Date = Date()) -> FusionDecision {
-        _ = now
-        if poll?.isActive == true || tap?.isActive == true {
-            return .candidate(source: "skeleton")
+    /// Evaluate current detector signals at `now`.
+    public mutating func evaluate(poll: AudioSignal?, tap: AudioSignal?, now: Date = Date()) -> FusionDecision {
+        let pollLoud = poll?.isActive == true
+        let tapLoud = tap?.isActive == true
+        if pollLoud || tapLoud {
+            quietSince = nil
+            if loudSince == nil { loudSince = now }
+            guard now.timeIntervalSince(loudSince!) >= activeDuration else { return .hold }
+            switch (pollLoud, tapLoud) {
+            case (true, true): return .candidate(source: "poll+tap")
+            case (true, false): return .candidate(source: "poll")
+            case (false, true): return .candidate(source: "tap")
+            case (false, false): return .hold // unreachable
+            }
+        } else {
+            loudSince = nil
+            if quietSince == nil { quietSince = now }
+            guard now.timeIntervalSince(quietSince!) >= quietDuration else { return .hold }
+            return .quiet
         }
-        return .hold
+    }
+
+    /// Reset both streaks (mode change, enable/disable, sleep/wake).
+    public mutating func reset() {
+        loudSince = nil
+        quietSince = nil
     }
 }

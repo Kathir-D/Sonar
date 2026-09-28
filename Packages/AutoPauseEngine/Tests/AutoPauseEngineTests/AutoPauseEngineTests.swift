@@ -6,7 +6,7 @@ import Testing
 }
 
 @Test func fusionHoldsWhenQuiet() {
-    let fusion = FusionState()
+    var fusion = FusionState()
     let decision = fusion.evaluate(
         poll: AudioSignal(isActive: false),
         tap: AudioSignal(isActive: false, rms: 0.0)
