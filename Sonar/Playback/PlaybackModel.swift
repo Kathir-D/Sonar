@@ -92,6 +92,13 @@ class PlaybackModel: ObservableObject {
     private let preferences: MusicPlayerPreferencesModel
     private var controller: MusicPlayerController
     private var timer: Timer?
+    // AppleScript round trips run here, serialized and off the main
+    // thread: a slow or hung Spotify must never block the menu bar.
+    private let fetchQueue = DispatchQueue(
+        label: "com.KathirD.sonar.playback-fetch",
+        qos: .userInitiated
+    )
+    private var fetchInFlight = false
 
     private var cancellable: AnyCancellable?
 
@@ -148,6 +155,17 @@ class PlaybackModel: ObservableObject {
     }
 
     func fetchInfo() {
+        // The 2s timer must not queue up faster than Spotify can answer,
+        // so drop a poll that would overlap the one already in flight.
+        fetchQueue.async { [weak self] in
+            guard let self, !self.fetchInFlight else { return }
+            self.fetchInFlight = true
+            defer { self.fetchInFlight = false }
+            self.fetchAndApply()
+        }
+    }
+
+    private func fetchAndApply() {
         guard let info = controller.fetchNowPlayingInfo() else {
             reset()
             return
@@ -305,12 +323,19 @@ class PlaybackModel: ObservableObject {
 }
 
 func runAppleScript(_ script: String) -> String? {
+    // AppleEvents default to a 2-minute timeout when the script has no
+    // `with timeout` clause. Spotify's scripting interface hangs outright
+    // when it is running but not logged in (or busy with a modal), which
+    // froze the whole menu-bar UI. Bound every call to 4s and treat any
+    // AppleEvent error as "no information".
+    let bounded = "with timeout of 4 seconds\n\(script)\nend timeout"
     var error: NSDictionary?
-    if let scriptObject = NSAppleScript(source: script) {
-        let output = scriptObject.executeAndReturnError(&error)
-        return output.stringValue
+    guard let scriptObject = NSAppleScript(source: bounded) else {
+        return nil
     }
-    return nil
+    let output = scriptObject.executeAndReturnError(&error)
+    if error != nil { return nil }
+    return output.stringValue
 }
 
 func openApp(bundleIdentifier: String) {
