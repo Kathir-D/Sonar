@@ -52,6 +52,10 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
     private var _ownedVolume: Int?
     private var _duckedVolume: Int?
     private var _generation: UInt64 = 0
+    /// True between taking ownership and finishing the pause/mute. While this
+    /// is set Spotify is still *playing* by design (a fade takes time), so
+    /// reconciliation must not read that as "the user resumed by hand".
+    private var _duckInProgress = false
 
     /// Called on an arbitrary queue for diagnostics.
     public var onEvent: (@Sendable (AdapterEvent) -> Void)?
@@ -134,6 +138,18 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
         lock.unlock()
     }
 
+    private var duckInProgress: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return _duckInProgress
+    }
+
+    private func setDuckInProgress(_ value: Bool) {
+        lock.lock()
+        _duckInProgress = value
+        lock.unlock()
+    }
+
     @discardableResult
     private func relinquish(reason: RelinquishReason) -> RelinquishReason {
         lock.lock()
@@ -155,6 +171,8 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
         }
         let captured = control.volume()
         takeOwnership(pid: pid, volume: captured)
+        setDuckInProgress(true)
+        defer { setDuckInProgress(false) }
         onEvent?(.ducked(source: source))
 
         switch mode {
@@ -232,12 +250,17 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
             relinquish(reason: control.spotifyPID() == nil ? .playerGone : .pidChanged)
             return
         }
-        if control.playerState() == .playing {
+        // One round trip instead of two. Mid-fade Spotify is still playing
+        // because *we* have not paused it yet, so that must not count as a
+        // manual resume.
+        let (state, volume) = control.stateAndVolume()
+        if state == .playing && !duckInProgress {
             restoreVolumeIfUntouched(ownedVolume: owned.volume, duckedVolume: owned.ducked)
             relinquish(reason: .manuallyResumed)
             return
         }
-        if let current = control.volume(), let ducked = owned.ducked, current != ducked {
+        if duckInProgress { return }
+        if let current = volume, let ducked = owned.ducked, current != ducked {
             relinquish(reason: .volumeChangedByUser)
         }
     }

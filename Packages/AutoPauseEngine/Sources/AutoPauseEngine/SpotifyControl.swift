@@ -32,6 +32,15 @@ public protocol SpotifyControl: Sendable {
 
 public extension SpotifyControl {
     static var spotifyBundleID: String { "com.spotify.client" }
+
+    /// Player state and volume in one go.
+    ///
+    /// The default performs two reads so test fakes need no changes; the
+    /// AppleScript implementation overrides it with a single round trip,
+    /// which is what keeps the engine's serial queue responsive.
+    func stateAndVolume() -> (state: SpotifyPlayerState?, volume: Int?) {
+        (playerState(), volume())
+    }
 }
 
 /// AppleScript strings. `with timeout of 4 seconds` on every command so a
@@ -48,6 +57,18 @@ public enum SpotifyScript {
                 return player state as string
             else
                 return "stopped"
+            end if
+        end tell
+        """)
+    }
+
+    public static var stateAndVolume: String {
+        wrap("""
+        tell application "Spotify"
+            if it is running then
+                return (player state as string) & "/" & ((sound volume as integer) as string)
+            else
+                return "stopped/0"
             end if
         end tell
         """)
@@ -93,6 +114,14 @@ public final class AppleScriptSpotifyControl: SpotifyControl, @unchecked Sendabl
     public func playerState() -> SpotifyPlayerState? {
         guard let raw = run(SpotifyScript.playerState) else { return nil }
         return SpotifyScript.parseState(raw)
+    }
+
+    public func stateAndVolume() -> (state: SpotifyPlayerState?, volume: Int?) {
+        guard let raw = run(SpotifyScript.stateAndVolume) else { return (nil, nil) }
+        let parts = raw.split(separator: "/", maxSplits: 1).map(String.init)
+        guard let state = parts.first else { return (nil, nil) }
+        let volume = parts.count > 1 ? Int(parts[1].trimmingCharacters(in: .whitespaces)) : nil
+        return (SpotifyScript.parseState(state), volume)
     }
 
     public func volume() -> Int? {

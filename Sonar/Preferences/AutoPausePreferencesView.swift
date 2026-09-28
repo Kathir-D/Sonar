@@ -70,20 +70,44 @@ struct AutoPausePreferencesView: View {
     private var modeSection: some View {
         Form {
             Section {
-                Picker("Duck mode", selection: $model.mode) {
-                    Text("Fade + Pause").tag(DuckMode.fadeAndPause)
-                    Text("Instant").tag(DuckMode.instant)
-                    Text("Mute only").tag(DuckMode.muteOnly)
+                Picker("Preset", selection: presetBinding) {
+                    Text("Fade").tag(Optional(AutoPausePreset.fade))
+                    Text("Instant").tag(Optional(AutoPausePreset.instant))
+                    Text("Custom").tag(Optional<AutoPausePreset>.none)
                 }
                 .pickerStyle(.radioGroup)
+                if let preset = model.currentPreset {
+                    Text(preset.summary)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Custom timings below.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
             } header: {
                 Text("Mode")
             } footer: {
-                Text("Fade + Pause fades volume out, pauses, then resumes with fade-in. Instant pauses at once. Mute only never pauses.")
+                Text(
+                    "Fade eases volume out, pauses, waits for quiet, then fades back in. "
+                        + "Instant pauses at once and resumes the moment the other app stops."
+                )
             }
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
+    }
+
+    /// Applies a preset on pick; falling back to "Custom" only clears the
+    /// selection so the sliders below can be edited freely.
+    private var presetBinding: Binding<AutoPausePreset?> {
+        Binding(
+            get: { model.currentPreset },
+            set: { picked in
+                guard let picked else { return }
+                model.apply(picked)
+            }
+        )
     }
 
     // MARK: - Timings (slider + numeric)
@@ -94,15 +118,15 @@ struct AutoPausePreferencesView: View {
                 sliderRow(
                     title: "Active duration",
                     value: $model.activeDuration,
-                    range: 0.3...3.0,
+                    range: 0.1...3.0,
                     step: 0.1,
                     unit: "s"
                 )
                 sliderRow(
                     title: "Quiet duration",
                     value: $model.quietDuration,
-                    range: 1.0...10.0,
-                    step: 0.5,
+                    range: 0.1...10.0,
+                    step: 0.1,
                     unit: "s"
                 )
                 sliderRow(

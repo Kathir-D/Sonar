@@ -19,13 +19,21 @@ public enum EngineEvent: Sendable, Equatable {
 /// - If the tap reports `.unavailable`/`.denied`, the engine keeps running
 ///   poll-only and emits `.tapUnavailable` for the diagnostics banner.
 public final class AutoPauseController: @unchecked Sendable {
-    public var poll: PollDetector
+    public var poll: any RefreshingDetector
     /// Nil (or unavailable) means poll-only mode.
     public var tap: TapDetector?
     public var fusion = FusionState()
     public var adapter: SpotifyFadeAdapter
     public var enabled = true
     public var tickInterval: TimeInterval = 0.1
+    /// Minimum spacing between ownership reconciliations.
+    ///
+    /// Reconcile costs an AppleEvent round trip (or several), and it used to
+    /// run on every 0.1 s tick. That starved the fusion evaluation: measured
+    /// with quietDuration = 1 s, resume actually took ~5.3 s because the tick
+    /// was still draining queued AppleEvents. Detecting a manual pause/resume
+    /// or volume nudge does not need 10 Hz.
+    public var reconcileInterval: TimeInterval = 0.5
 
     /// Called on an arbitrary queue for diagnostics / logging.
     public var onEvent: (@Sendable (EngineEvent) -> Void)?
@@ -33,9 +41,14 @@ public final class AutoPauseController: @unchecked Sendable {
     private let queue = DispatchQueue(label: "sonar.autopause-engine")
     private var timer: DispatchSourceTimer?
     private var tapIsUsable = true
+    private var lastReconcileAt: Date?
+    /// Fusion reports `.candidate` on every tick once the streak is long
+    /// enough. Emit the event only on the transition into that state so the
+    /// diagnostics log shows one line per episode, not one per tick.
+    private var candidateAnnounced = false
 
     public init(
-        poll: PollDetector = PollDetector(),
+        poll: any RefreshingDetector = PollDetector(),
         tap: TapDetector? = TapDetector(),
         adapter: SpotifyFadeAdapter = SpotifyFadeAdapter()
     ) {
@@ -63,6 +76,8 @@ public final class AutoPauseController: @unchecked Sendable {
         poll.stop()
         tap?.stop()
         fusion.reset()
+        lastReconcileAt = nil
+        candidateAnnounced = false
     }
 
     /// One engine tick. Public + synchronous for tests.
@@ -73,13 +88,29 @@ public final class AutoPauseController: @unchecked Sendable {
         let decision = fusion.evaluate(poll: pollSignal, tap: tapSignal)
         switch decision {
         case .candidate(let source):
-            onEvent?(.candidate(source: source))
+            if !candidateAnnounced {
+                candidateAnnounced = true
+                onEvent?(.candidate(source: source))
+            }
             adapter.duckSync(source: source)
         case .quiet:
+            candidateAnnounced = false
             adapter.restoreSync()
         case .hold:
-            adapter.reconcileSync()
+            if shouldReconcile() { adapter.reconcileSync() }
         }
+    }
+
+    /// True at most once per `reconcileInterval`. Cheap guards first so the
+    /// throttle never costs an AppleEvent of its own.
+    private func shouldReconcile() -> Bool {
+        guard adapter.isOwned else { return false }
+        let now = Date()
+        if let last = lastReconcileAt, now.timeIntervalSince(last) < reconcileInterval {
+            return false
+        }
+        lastReconcileAt = now
+        return true
     }
 
     // MARK: - Internals

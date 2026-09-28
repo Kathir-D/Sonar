@@ -2,6 +2,10 @@ import Foundation
 import SwiftUI
 
 class SpotifyController: MusicPlayerController {
+    // Guards the mutable bookkeeping below. `fetchNowPlayingInfo()` runs on
+    // PlaybackModel's polling queue while user actions (play/pause, like,
+    // seek) call in from the main thread, so all of this is shared state.
+    private let stateLock = NSLock()
     private var lastTrackID: String?
     private var lastTrackType: String?
     private var lastIsLiked: Bool?
@@ -10,6 +14,59 @@ class SpotifyController: MusicPlayerController {
     private var pendingLongFormFetches = Set<String>()
 
     private let preferences: MusicPlayerPreferencesModel
+
+    // MARK: - Shared-state accessors
+
+    private var cachedLastIsLiked: Bool? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return lastIsLiked
+    }
+
+    private func setLastIsLiked(_ value: Bool?) {
+        stateLock.lock()
+        lastIsLiked = value
+        stateLock.unlock()
+    }
+
+    private var cachedLastTrackType: String? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return lastTrackType
+    }
+
+    private func setLastTrackType(_ value: String?) {
+        stateLock.lock()
+        lastTrackType = value
+        stateLock.unlock()
+    }
+
+    /// Returns true when this track still needs a like-status lookup.
+    private func needsLikedLookup(for trackID: String) -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return trackID != lastTrackID
+    }
+
+    private func markLikedLookupDone(for trackID: String) {
+        stateLock.lock()
+        lastTrackID = trackID
+        stateLock.unlock()
+    }
+
+    private func beginLongFormFetch(_ cacheKey: String) -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard !pendingLongFormFetches.contains(cacheKey) else { return false }
+        pendingLongFormFetches.insert(cacheKey)
+        return true
+    }
+
+    private func endLongFormFetch(_ cacheKey: String) {
+        stateLock.lock()
+        pendingLongFormFetches.remove(cacheKey)
+        stateLock.unlock()
+    }
 
     init(preferences: MusicPlayerPreferencesModel) {
         self.preferences = preferences
@@ -62,14 +119,14 @@ class SpotifyController: MusicPlayerController {
         default: longFormKind = nil
         }
         let isTrack = trackType == "track"
-        lastTrackType = trackType
+        setLastTrackType(trackType)
 
-        var isLikedResult: Bool? = lastIsLiked
+        var isLikedResult: Bool? = cachedLastIsLiked
         var longFormInfo: LongFormInfo? = nil
 
         if !isTrack {
             isLikedResult = nil
-            lastIsLiked = nil
+            setLastIsLiked(nil)
         }
 
         if longFormKind != nil, let trackID, let longFormKind {
@@ -95,18 +152,18 @@ class SpotifyController: MusicPlayerController {
             }
         }
 
-        if let trackID = trackID, trackID != lastTrackID, isTrack {
+        if let trackID = trackID, isTrack, needsLikedLookup(for: trackID) {
             let semaphore = DispatchSemaphore(value: 0)
 
             SpotifyAuthManager.shared.checkIfTrackIsLiked(trackID: trackID) {
                 isLiked in
-                self.lastIsLiked = isLiked
+                self.setLastIsLiked(isLiked)
                 isLikedResult = isLiked
                 semaphore.signal()
             }
 
             _ = semaphore.wait(timeout: .now() + 2)
-            lastTrackID = trackID
+            markLikedLookupDone(for: trackID)
         }
 
         return PlaybackInfo(
@@ -146,7 +203,7 @@ class SpotifyController: MusicPlayerController {
     }
 
     func toggleLiked() {
-        guard let trackID = getCurrentTrackID(), lastTrackType == "track"
+        guard let trackID = getCurrentTrackID(), cachedLastTrackType == "track"
         else { return }
 
         SpotifyAuthManager.shared.checkIfTrackIsLiked(trackID: trackID) {
@@ -160,16 +217,16 @@ class SpotifyController: MusicPlayerController {
 
             if isLiked {
                 SpotifyAuthManager.shared.removeTrackFromLiked(trackID: trackID)
-                self.lastIsLiked = false
+                self.setLastIsLiked(false)
             } else {
                 SpotifyAuthManager.shared.addTrackToLiked(trackID: trackID)
-                self.lastIsLiked = true
+                self.setLastIsLiked(true)
             }
         }
     }
 
     func likeTrack() {
-        guard let trackID = getCurrentTrackID(), lastTrackType == "track"
+        guard let trackID = getCurrentTrackID(), cachedLastTrackType == "track"
         else { return }
 
         SpotifyAuthManager.shared.checkIfTrackIsLiked(trackID: trackID) {
@@ -184,12 +241,12 @@ class SpotifyController: MusicPlayerController {
             if !isLiked {
                 SpotifyAuthManager.shared.addTrackToLiked(trackID: trackID)
             }
-            self.lastIsLiked = true
+            self.setLastIsLiked(true)
         }
     }
 
     func unlikeTrack() {
-        guard let trackID = getCurrentTrackID(), lastTrackType == "track"
+        guard let trackID = getCurrentTrackID(), cachedLastTrackType == "track"
         else { return }
 
         SpotifyAuthManager.shared.checkIfTrackIsLiked(trackID: trackID) {
@@ -204,7 +261,7 @@ class SpotifyController: MusicPlayerController {
             if isLiked {
                 SpotifyAuthManager.shared.removeTrackFromLiked(trackID: trackID)
             }
-            self.lastIsLiked = false
+            self.setLastIsLiked(false)
         }
     }
 
@@ -224,7 +281,7 @@ class SpotifyController: MusicPlayerController {
             return nil
         }
         let components = trackURI.components(separatedBy: ":")
-        lastTrackType = components.count > 1 ? components[1] : nil
+        setLastTrackType(components.count > 1 ? components[1] : nil)
         guard let trackID = components.last else { return nil }
         return trackID
     }
@@ -256,15 +313,14 @@ class SpotifyController: MusicPlayerController {
         fallbackArtist: String
     ) {
         // Avoid duplicate fetches for the same track
-        guard !pendingLongFormFetches.contains(cacheKey) else { return }
-        pendingLongFormFetches.insert(cacheKey)
+        guard beginLongFormFetch(cacheKey) else { return }
 
         SpotifyAuthManager.shared.getAccessToken { [weak self] token in
             guard let self = self,
                 let token = token,
                 let url = self.makeLongFormURL(id: id, kind: kind)
             else {
-                self?.pendingLongFormFetches.remove(cacheKey)
+                self?.endLongFormFetch(cacheKey)
                 return
             }
 
@@ -276,7 +332,7 @@ class SpotifyController: MusicPlayerController {
             )
 
             URLSession.shared.dataTask(with: request) { [weak self] data, _, error in
-                defer { self?.pendingLongFormFetches.remove(cacheKey) }
+                defer { self?.endLongFormFetch(cacheKey) }
 
                 guard let self = self, let data = data, error == nil else { return }
 
@@ -348,8 +404,12 @@ class SpotifyController: MusicPlayerController {
 
 }
 
+/// Thread-safe LRU. The controller is polled on a background queue and also
+/// called from the main thread on user actions, so the backing dictionary and
+/// order array must not be mutated concurrently.
 private final class LRUCache<Key: Hashable, Value> {
     private let capacity: Int
+    private let lock = NSLock()
     private var values: [Key: Value] = [:]
     private var order: [Key] = []
 
@@ -358,8 +418,14 @@ private final class LRUCache<Key: Hashable, Value> {
     }
 
     subscript(key: Key) -> Value? {
-        get { value(for: key) }
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return value(for: key)
+        }
         set {
+            lock.lock()
+            defer { lock.unlock() }
             if let value = newValue {
                 setValue(value, for: key)
             } else {

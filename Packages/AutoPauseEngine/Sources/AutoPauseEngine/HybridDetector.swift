@@ -33,3 +33,14 @@ public protocol HybridDetector: Sendable {
     /// Stop producing observations and release system resources.
     func stop()
 }
+
+/// A detector the engine can re-scan synchronously on its own tick.
+///
+/// The poll backend is polled this way (a cheap on-demand process scan). The
+/// tap backend pushes instead, so it stays on plain `HybridDetector`.
+public protocol RefreshingDetector: HybridDetector {
+    /// Re-scan now, publish, and return the fresh signal.
+    func refresh() -> AudioSignal
+    /// User source-selection rules, applied while refreshing.
+    var filter: SourceFilter { get set }
+}

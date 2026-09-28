@@ -72,7 +72,7 @@ public enum PollRules {
 /// No-permission poll backend: `IsRunningOutput` scan on demand (~14 ms),
 /// 0 idle CPU. Wraps the ported `AudioDetector` with Sonar's exclusion and
 /// filter rules and exposes the `HybridDetector` interface.
-public final class PollDetector: HybridDetector, @unchecked Sendable {
+public final class PollDetector: RefreshingDetector, @unchecked Sendable {
     public let name = "poll"
 
     private let lock = NSLock()

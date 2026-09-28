@@ -57,6 +57,32 @@ class AutoPausePreferencesModel: ObservableObject {
         SourceFilter(mode: filterMode, bundleIDs: Set(bundleIDs))
     }
 
+    /// The preset that matches the current settings, or nil when the user has
+    /// tuned the values by hand.
+    var currentPreset: AutoPausePreset? {
+        AutoPausePreset.allCases.first { preset in
+            preset.matches(
+                mode: mode,
+                activeDuration: activeDuration,
+                quietDuration: quietDuration,
+                fadeOutDuration: fadeOutDuration,
+                fadeInDuration: fadeInDuration
+            )
+        }
+    }
+
+    /// Apply a preset wholesale. A preset owns mode *and* timings, so
+    /// "Instant" really is instant instead of inheriting the fade preset's
+    /// multi-second dwell times.
+    func apply(_ preset: AutoPausePreset) {
+        mode = preset.mode
+        activeDuration = preset.activeDuration
+        quietDuration = preset.quietDuration
+        fadeOutDuration = preset.fadeOutDuration
+        fadeInDuration = preset.fadeInDuration
+        save()
+    }
+
     /// Identity of the tap-affecting rules. Save restarts the tap only when
     /// this changes; timing/volume tweaks apply live without rebuild.
     var rulesFingerprint: String {
