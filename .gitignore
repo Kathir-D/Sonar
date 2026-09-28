@@ -16,6 +16,8 @@ DerivedData/
 .LSOverride
 # Logs
 *.log
+# Release artifacts (zips + derived data; published to GitHub Releases, not git)
+dist/
 # Env / secrets — never commit Spotify Client ID/secret, certs
 .env
 *.p12

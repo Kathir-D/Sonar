@@ -1,0 +1,30 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "${GITHUB_REF_NAME#v}" > VERSION
+      - run: swift test --package-path Packages/AutoPauseEngine
+      - run: scripts/build-app.sh
+        env:
+          CODE_SIGN_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID || '-' }}
+      - run: scripts/package-release.sh
+      # Notarization runs only when owner secrets exist (Developer ID flow).
+      - name: notarize
+        if: ${{ secrets.APPLE_DEVELOPER_ID != '' }}
+        run: scripts/sign-release.sh --release
+        env:
+          DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
+          NOTARY_PROFILE: sonar-notary
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*/Sonar-*.zip,dist/*/SHA256SUMS.txt
+          generate_release_notes: true
+      # Owner: a follow-up job can push version+sha to your homebrew-tap
+      # (scripts/bump-cask.sh) once the tap repo + token are configured.

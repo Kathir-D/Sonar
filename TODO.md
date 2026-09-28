@@ -77,15 +77,15 @@
 
 Why: `brew install --cask sonar` is the target install path.
 
-### [ ] 10. `feat: release packaging (zip + checksums + Sparkle)`
+### [x] 10. `feat: release packaging (zip + checksums + Sparkle)`
 - Do: `scripts/build-app.sh` (build Release, inject `VERSION` into Info.plist), `scripts/package-release.sh` → `dist/<ver>/Sonar-<ver>.zip` + `SHA256SUMS.txt`; keep Sparkle `appcast.xml` signed (EdDSA) and in sync with `VERSION`.
 - Done when: clean VM can unzip + run, About shows VERSION, Sparkle update check works.
 
-### [ ] 11. `feat: signing + notarization`
+### [x] 11. `feat: signing + notarization`
 - Why: Gatekeeper + Homebrew cask warnings otherwise (`Open Anyway` fallback for ad-hoc dev only).
 - Do: Hardened Runtime + entitlements (Audio Capture usage string, AppleEvents for `com.spotify.client`), Developer ID sign + `notarytool` staple in release lane; keep ad-hoc lane for local dev.
 - Done when: `spctl -a -vv` + `stapler validate` pass on release zip.
 
-### [ ] 12. `feat: homebrew-tap cask`
+### [x] 12. `feat: homebrew-tap cask`
 - Do: create 3rd repo `homebrew-tap` (`Casks/sonar.rb`: version, sha256, url to GitHub Release zip, `app "Sonar.app"`, `zap` stanza for prefs/logs, `depends_on macos: ">= :sequoia"`, `conflicts_with cask: "spotmenu"`); `brew audit --cask --strict`, `brew install --cask`, `brew test`, `brew uninstall --cask --zap` on fresh user; CI job bumps version+sha on every GitHub Release.
 - Done when: `brew tap you/tap && brew install --cask sonar` works from scratch, zap cleans fully.
