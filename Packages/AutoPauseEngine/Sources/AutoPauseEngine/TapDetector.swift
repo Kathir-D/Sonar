@@ -137,7 +137,9 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
             queue.async { [weak self] in
                 guard let self else { return }
                 self.smoother.config = self.config
-                self.rebuildIfNeeded(reason: "config", force: true)
+                // Conditional: rebuilds only when the resolved targets
+                // changed, so Save restarts the tap only when rules change.
+                self.rebuildIfNeeded(reason: "config")
             }
         }
     }
@@ -259,7 +261,7 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
                 ) { excluded.insert(objectID); continue }
             }
             return TapTargets(
-                excludedObjectIDs: Array(excluded),
+                excludedObjectIDs: excluded.sorted(),
                 includedObjectIDs: [],
                 exclusive: true
             )
@@ -272,7 +274,7 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
                     included.insert(objectID)
                 }
             }
-            return TapTargets(excludedObjectIDs: [], includedObjectIDs: Array(included), exclusive: false)
+            return TapTargets(excludedObjectIDs: [], includedObjectIDs: included.sorted(), exclusive: false)
         }
     }
 

@@ -26,6 +26,11 @@ public struct FusionState: Sendable {
     private var loudSince: Date?
     private var quietSince: Date?
 
+    /// Start of the current loud streak, if any (diagnostics countdowns).
+    public var loudStreakStart: Date? { loudSince }
+    /// Start of the current quiet streak, if any (diagnostics countdowns).
+    public var quietStreakStart: Date? { quietSince }
+
     public init(activeDuration: TimeInterval = 1.0, quietDuration: TimeInterval = 3.0) {
         self.activeDuration = activeDuration
         self.quietDuration = quietDuration

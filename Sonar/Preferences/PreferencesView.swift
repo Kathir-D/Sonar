@@ -2,6 +2,7 @@ import SwiftUI
 
 enum PreferencesSection: String, CaseIterable, Identifiable {
     case player = "Player"
+    case autoPause = "Auto-Pause"
     case appearance = "Appearance"
     case menuBar = "Menu Bar"
     case shortcuts = "Shortcuts"
@@ -13,6 +14,8 @@ enum PreferencesSection: String, CaseIterable, Identifiable {
         switch self {
         case .player:
             return "music.note"
+        case .autoPause:
+            return "pause.circle"
         case .appearance:
             return "paintbrush"
         case .menuBar:
@@ -31,6 +34,8 @@ struct PreferencesView: View {
     @ObservedObject var musicPlayerPreferencesModel: MusicPlayerPreferencesModel
     @ObservedObject var playbackAppearancePreferencesModel:
         PlaybackAppearancePreferencesModel
+    @ObservedObject var autoPausePreferencesModel: AutoPausePreferencesModel
+    @ObservedObject var engineHost: SonarEngineHost
 
     @State private var selectedSection: PreferencesSection? = .player
 
@@ -108,6 +113,11 @@ struct PreferencesView: View {
                 model: musicPlayerPreferencesModel,
                 playbackModel: playbackModel
             )
+        case .autoPause:
+            AutoPausePreferencesView(
+                model: autoPausePreferencesModel,
+                host: engineHost
+            )
         case .appearance:
             PlaybackAppearancePreferencesView(
                 model: playbackAppearancePreferencesModel,
@@ -135,6 +145,8 @@ struct PreferencesView: View {
             preferences: MusicPlayerPreferencesModel()
         ),
         musicPlayerPreferencesModel: MusicPlayerPreferencesModel(),
-        playbackAppearancePreferencesModel: PlaybackAppearancePreferencesModel()
+        playbackAppearancePreferencesModel: PlaybackAppearancePreferencesModel(),
+        autoPausePreferencesModel: AutoPausePreferencesModel(),
+        engineHost: SonarEngineHost()
     )
 }

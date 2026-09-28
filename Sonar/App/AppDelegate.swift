@@ -10,6 +10,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var musicPlayerPreferencesModel = MusicPlayerPreferencesModel()
     var playbackModel: PlaybackModel!
     var menuBarPreferencesModel = MenuBarPreferencesModel()
+    var autoPausePreferencesModel = AutoPausePreferencesModel()
+    var engineHost = SonarEngineHost.shared
     var popoverManager: PopoverManager!
     var preferencesWindow: NSWindow?
     var eventMonitor: Any?
@@ -75,6 +77,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         setupKeyboardShortcuts()
         updateStatusItem()
+
+        // Hybrid auto-pause engine (poll + tap). Starts on the engine's own
+        // queues; the UI only observes via SonarEngineHost.
+        engineHost.start(with: autoPausePreferencesModel)
 
         menuBarPreferencesModelCancellable = menuBarPreferencesModel
             .objectWillChange.sink { [weak self] _ in
@@ -193,7 +199,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     playbackModel: playbackModel,
                     musicPlayerPreferencesModel: musicPlayerPreferencesModel,
                     playbackAppearancePreferencesModel:
-                        playbackAppearancePreferencesModel
+                        playbackAppearancePreferencesModel,
+                    autoPausePreferencesModel: autoPausePreferencesModel,
+                    engineHost: engineHost
                 )
             )
 
