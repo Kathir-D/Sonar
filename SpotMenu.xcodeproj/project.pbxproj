@@ -12,6 +12,7 @@
 		64134C342E05AF1E00EB3AE3 /* ISSUE_TEMPLATE.md in Resources */ = {isa = PBXBuildFile; fileRef = 64134C332E05AF1E00EB3AE3 /* ISSUE_TEMPLATE.md */; };
 		648D41AD2E02904C001D8CE5 /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = 648D41AC2E02904C001D8CE5 /* KeyboardShortcuts */; };
 		64SPARKLE012F00000000001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 64SPARKLE012F00000000002 /* Sparkle */; };
+		7A11C3D4E5F60718293A4B5E /* AutoPauseEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 7A11C3D4E5F60718293A4B5D /* AutoPauseEngine */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -78,6 +79,7 @@
 			files = (
 				648D41AD2E02904C001D8CE5 /* KeyboardShortcuts in Frameworks */,
 				64SPARKLE012F00000000001 /* Sparkle in Frameworks */,
+				7A11C3D4E5F60718293A4B5E /* AutoPauseEngine in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -144,6 +146,7 @@
 			packageProductDependencies = (
 				648D41AC2E02904C001D8CE5 /* KeyboardShortcuts */,
 				64SPARKLE012F00000000002 /* Sparkle */,
+				7A11C3D4E5F60718293A4B5D /* AutoPauseEngine */,
 			);
 			productName = SpotMenu;
 			productReference = 648170E82DFF5D2B002F5F05 /* SpotMenu.app */;
@@ -230,6 +233,7 @@
 			packageReferences = (
 				648D41A92E028FAF001D8CE5 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */,
 				64SPARKLE012F00000000003 /* XCRemoteSwiftPackageReference "Sparkle" */,
+				7A11C3D4E5F60718293A4B5C /* XCLocalSwiftPackageReference "AutoPauseEngine" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 648170E92DFF5D2B002F5F05 /* Products */;
@@ -628,6 +632,13 @@
 		};
 /* End XCRemoteSwiftPackageReference section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		7A11C3D4E5F60718293A4B5C /* XCLocalSwiftPackageReference "AutoPauseEngine" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/AutoPauseEngine;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		648D41AC2E02904C001D8CE5 /* KeyboardShortcuts */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -638,6 +649,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 64SPARKLE012F00000000003 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		7A11C3D4E5F60718293A4B5D /* AutoPauseEngine */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7A11C3D4E5F60718293A4B5C /* XCLocalSwiftPackageReference "AutoPauseEngine" */;
+			productName = AutoPauseEngine;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
