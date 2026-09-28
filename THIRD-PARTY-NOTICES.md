@@ -71,3 +71,16 @@ SOFTWARE.
   - https://developer.apple.com/documentation/CoreAudio/capturing-system-audio-with-core-audio-taps
   - https://developer.apple.com/documentation/coreaudio/catapdescription
 - Do not vendor FlowSound files without written permission.
+- Affirmed 2026-09-28: no FlowSound file is vendored. The only "flowsound"
+  mentions in the repo are the clean-room provenance comments in
+  `Packages/AutoPauseEngine/Sources/AutoPauseEngine/TapDetector.swift` and
+  `AutoPauseEngine.swift`. Verified with `grep -rli flowsound` (source files).
+
+## Sonar-new engine code (MIT, Sonar Contributors)
+
+- `Packages/AutoPauseEngine`: `PollDetector.swift` (exclusions/filters glue),
+  `TapDetector.swift` (clean-room tap), `FusionState.swift`,
+  `SpotifyControl.swift`, `SpotifyFadeAdapter.swift`,
+  `AutoPauseController.swift` — all Sonar MIT, except the two ported
+  SmartPause files noted above.
+- `Sonar/Engine/` + `Sonar/Preferences/AutoPause*` — Sonar MIT app code.
