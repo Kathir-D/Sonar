@@ -32,7 +32,7 @@
 
 ### [x] 3. `feat!: rename to Sonar`
 - Why: new brand, avoid collision.
-- Do: bundle ID `com.you.sonar` (confirm with owner), `sonar://callback`, display name Sonar, Sparkle appcast URL, Info.plist `NSAudioCaptureUsageDescription`.
+- Do: bundle ID `com.KathirD.sonar`, `com.KathirD.sonar://callback`, display name Sonar, Sparkle appcast URL, Info.plist `NSAudioCaptureUsageDescription`.
 - Done when: app installs side-by-side with SpotMenu, liking callback uses new URI (update Spotify Dashboard).
 
 ### [x] 4. `feat: enforce Spotify-only`

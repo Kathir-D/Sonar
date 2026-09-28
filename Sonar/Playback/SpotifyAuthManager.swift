@@ -9,11 +9,11 @@ class SpotifyAuthManager: ObservableObject {
     private var clientID: String? {
         UserDefaults.standard.string(forKey: "spotify.clientID")
     }
-    private let redirectURI = "com.you.sonar://callback"
+    private let redirectURI = "com.KathirD.sonar://callback"
     private let tokenURL = "https://accounts.spotify.com/api/token"
     private let authURL = "https://accounts.spotify.com/authorize"
 
-    private let keychainService = "com.you.sonar.spotify.auth"
+    private let keychainService = "com.KathirD.sonar.spotify.auth"
     private let accessTokenKey = "accessToken"
     private let refreshTokenKey = "refreshToken"
     private let expiryDateKey = "tokenExpiry"
@@ -52,7 +52,7 @@ class SpotifyAuthManager: ObservableObject {
 
     func handleRedirect(url: URL) {
         guard
-            url.scheme == "com.you.sonar",
+            url.scheme == "com.KathirD.sonar",
             let code = URLComponents(url: url, resolvingAgainstBaseURL: false)?
                 .queryItems?.first(where: { $0.name == "code" })?.value,
             let codeVerifier = UserDefaults.standard.string(

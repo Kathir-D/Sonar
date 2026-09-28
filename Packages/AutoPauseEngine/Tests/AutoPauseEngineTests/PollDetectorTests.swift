@@ -26,7 +26,7 @@ private func proc(
     let selfPID: pid_t = 4242
     let filter = SourceFilter()
     let found = [
-        proc(pid: 4242, bundle: "com.you.sonar", name: "Sonar"),  // self
+        proc(pid: 4242, bundle: "com.KathirD.sonar", name: "Sonar"),  // self
         proc(pid: 100, bundle: "com.spotify.client", name: "Spotify"),  // player
         proc(pid: 101, bundle: "com.spotify.client.helper", rpid: 100, rbundle: "com.spotify.client", name: "Spotify Helper"),  // helper -> parent
         proc(pid: 200, name: "systemsoundserverd"),  // UI blips

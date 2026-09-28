@@ -8,7 +8,7 @@ enum SonarLog {
     private static let queue = DispatchQueue(label: "sonar.log")
 
     /// Container-aware: under the app sandbox this resolves inside
-    /// `~/Library/Containers/com.you.sonar/Data/Library/Logs/Sonar/`
+    /// `~/Library/Containers/com.KathirD.sonar/Data/Library/Logs/Sonar/`
     /// (visible in Console.app); unsandboxed it is `~/Library/Logs/Sonar/`.
     /// A literal `~/Library/Logs` path is not writable when sandboxed.
     static var logURL: URL {

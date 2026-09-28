@@ -38,7 +38,7 @@ public enum PollRules {
     /// Bundle IDs (own or responsible) that never count as external audio.
     public static let excludedBundleIDs: Set<String> = [
         "com.spotify.client",  // the player itself + its helpers
-        "com.you.sonar",  // self, in case Sonar ever emits audio
+        "com.KathirD.sonar",  // self, in case Sonar ever emits audio
     ]
 
     /// Daemon process names (they usually have no bundle ID) that never count.

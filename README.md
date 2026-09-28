@@ -28,7 +28,7 @@ Release zips + Sparkle updates + Homebrew cask: see TODO tasks 10–12.
 ## Cutting a release (owner checklist)
 
 1. `git remote add origin <your repo>` + push (remote is `https://github.com/Kathir-D/Sonar.git`).
-2. Decide the final bundle ID (currently the `com.you.sonar` placeholder): `SpotMenu.xcodeproj` `PRODUCT_BUNDLE_IDENTIFIER`, `Sonar/Info.plist` URL types, `SpotifyAuthManager` redirect URI + keychain service, `Casks/sonar.rb` zap stanza, `PollDetector` self-exclusion. GitHub URLs already point at `Kathir-D/Sonar`.
+2. Bundle ID is `com.KathirD.sonar` (Xcode, `Info.plist` URL types, Spotify redirect URI + keychain, Cask zap, `PollDetector` self-exclusion). GitHub URLs already point at `Kathir-D/Sonar`.
 3. Sparkle: generate an EdDSA key, put the public key in `SUPublicEDKey`, keep the private key for `sign_update`.
 4. Bump `VERSION`, tag `vX.Y.Z`, push (CI builds, tests, packages, publishes the zip).
 5. `scripts/sign-release.sh --release` with `DEVELOPER_ID` + `NOTARY_PROFILE`, then re-attach the stapled zip to the GitHub Release.
@@ -38,7 +38,7 @@ Release zips + Sparkle updates + Homebrew cask: see TODO tasks 10–12.
 ## Spotify Setup (liking)
 
 1. developer.spotify.com/dashboard → Create App (name e.g. `Sonar`)
-2. Redirect URI: `com.you.sonar://callback`
+2. Redirect URI: `com.KathirD.sonar://callback`
 3. Paste Client ID in Preferences → Music Player
 
 No Premium required for playback control (AppleScript). No Soloist/librespot.
@@ -64,7 +64,7 @@ IsRunningOutput poll ──────┘
 
 Diagnostics live in Preferences → Auto-Pause: state dot, poll/tap state, live RMS, duck/resume countdowns, last result, recent-sources finder, and the log path.
 
-Log: `~/Library/Containers/com.you.sonar/Data/Library/Logs/Sonar/sonar.log` (sandboxed dev builds; capped at 256 KB).
+Log: `~/Library/Containers/com.KathirD.sonar/Data/Library/Logs/Sonar/sonar.log` (sandboxed dev builds; capped at 256 KB).
 
 ## Building
 

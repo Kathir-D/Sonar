@@ -13,9 +13,9 @@ cask "sonar" do
   app "Sonar.app"
 
   zap trash: [
-    "~/Library/Caches/com.you.sonar",
-    "~/Library/Containers/com.you.sonar",
+    "~/Library/Caches/com.KathirD.sonar",
+    "~/Library/Containers/com.KathirD.sonar",
     "~/Library/Logs/Sonar",
-    "~/Library/Preferences/com.you.sonar.plist",
+    "~/Library/Preferences/com.KathirD.sonar.plist",
   ]
 end
