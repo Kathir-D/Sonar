@@ -171,14 +171,17 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
     private func duckImpl(source: String, generation: UInt64) {
         if isOwned { return } // already ducked; ticks keep calling duck()
         guard let pid = control.spotifyPID() else { return } // Quit / not running
-        guard control.playerState() == .playing else {
+        // One AppleEvent instead of two: player state plus the volume we may
+        // need to restore. A round trip costs ~300 ms here, so this alone is
+        // the difference between "instant" and "noticeably late".
+        let probe = control.stateAndVolume()
+        guard probe.state == .playing else {
             // Paused/stopped/unknown: user (or Spotify) owns the state.
             // Never take ownership -> later restore() can never resume.
             onEvent?(.skippedNotPlaying)
             return
         }
-        let captured = control.volume()
-        takeOwnership(pid: pid, volume: captured)
+        takeOwnership(pid: pid, volume: probe.volume)
         setDuckInProgress(true)
         defer { setDuckInProgress(false) }
         onEvent?(.ducked(source: source))
@@ -189,14 +192,19 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
             guard generation == currentGeneration() else { return }
             control.pause()
             reread()
+            if generation == currentGeneration() {
+                setDuckedVolume(control.volume())
+            }
         case .instant:
+            // Instant mode never touches the volume, so there is no value to
+            // re-read afterwards: pause and let the command settle only.
             control.pause()
-            reread()
+            settle()
         case .muteOnly:
             setVolumeSync(0, generation: generation)
-        }
-        if generation == currentGeneration() {
-            setDuckedVolume(control.volume())
+            if generation == currentGeneration() {
+                setDuckedVolume(control.volume())
+            }
         }
     }
 
@@ -211,8 +219,8 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
             relinquish(reason: .pidChanged) // restart: new instance owns itself
             return
         }
-        let state = control.playerState()
-        switch state {
+        let probe = control.stateAndVolume()
+        switch probe.state {
         case .playing:
             // User resumed manually (or it never paused): restore our volume
             // duck if untouched, never call play, release ownership.
@@ -227,7 +235,7 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
         case .paused:
             break // ours to resume
         }
-        if let current = control.volume(), let ducked = owned.ducked, current != ducked {
+        if let current = probe.volume, let ducked = owned.ducked, current != ducked {
             // User moved volume mid-duck: preserve theirs, release everything.
             relinquish(reason: .volumeChangedByUser)
             return
@@ -239,8 +247,9 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
             guard generation == currentGeneration() else { return }
             fade(to: owned.volume ?? 100, over: fadeInDuration, generation: generation)
         case .instant:
+            // As in duck: no volume to reconcile, so skip the extra round trip.
             control.play()
-            reread()
+            settle()
         case .muteOnly:
             setVolumeSync(owned.volume ?? 100, generation: generation)
         }
@@ -305,6 +314,12 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
     private func reread() {
         Thread.sleep(forTimeInterval: rereadDelay)
         _ = control.playerState()
+    }
+
+    /// Same settle delay without the follow-up read. For the instant path,
+    /// where no volume has to be reconciled afterwards.
+    private func settle() {
+        Thread.sleep(forTimeInterval: rereadDelay)
     }
 }
 
