@@ -50,7 +50,22 @@ struct AutoPausePreferencesView: View {
             } header: {
                 Text("State")
             } footer: {
-                Text("When ducked, Sonar owns Spotify playback and releases it on any manual pause, volume change, restart, or quit.")
+                if host.uiState == .tapUnavailable {
+                    // Poll-only can only ask "is this app holding the audio
+                    // output?", never "is it actually making sound". A paused
+                    // browser tab keeps the device open, so silence reads as
+                    // loud and resuming is late. Say so, and say what fixes it.
+                    Text(
+                        "Tap unavailable, so Sonar is using process polling. Polling "
+                            + "cannot measure loudness: any app holding the audio output "
+                            + "counts as loud, even in silence, so a paused video can delay "
+                            + "the resume. To fix, install the signed release, then grant "
+                            + "Sonar under System Settings > Privacy & Security > Screen & "
+                            + "System Audio Recording, and reopen Auto-Pause."
+                    )
+                } else {
+                    Text("When ducked, Sonar owns Spotify playback and releases it on any manual pause, volume change, restart, or quit.")
+                }
             }
         }
         .formStyle(.grouped)
@@ -310,8 +325,14 @@ struct AutoPausePreferencesView: View {
     private var permissionsSection: some View {
         Form {
             Section {
-                Text("Audio Capture: starting the engine triggers the system prompt once. If denied, Sonar runs poll-only (no RMS, no fade) until allowed.")
-                Text("Automation: allow Sonar to control Spotify under System Settings › Privacy & Security › Automation, or auto-pause stays disabled with a hint.")
+                Text(
+                    "Screen & System Audio Recording: required for loudness (RMS) detection. "
+                        + "Grant it under System Settings > Privacy & Security > Screen & "
+                        + "System Audio Recording. Until it is granted the tap cannot start "
+                        + "and Sonar falls back to process polling, which cannot tell silence "
+                        + "from sound."
+                )
+                Text("Automation: allow Sonar to control Spotify under System Settings > Privacy & Security > Automation, or auto-pause stays disabled with a hint.")
             } header: {
                 Text("Permissions")
             }
