@@ -9,7 +9,10 @@ class SpotifyAuthManager: ObservableObject {
     private var clientID: String? {
         UserDefaults.standard.string(forKey: "spotify.clientID")
     }
-    private let redirectURI = "com.KathirD.sonar://callback"
+    // Lowercase: URL schemes are case-insensitive on the wire (Spotify,
+    // browsers, Launch Services) but Foundation preserves the case it is
+    // given, so the canonical form must be lowercase end-to-end.
+    private let redirectURI = "com.kathird.sonar://callback"
     private let tokenURL = "https://accounts.spotify.com/api/token"
     private let authURL = "https://accounts.spotify.com/authorize"
 
@@ -52,7 +55,7 @@ class SpotifyAuthManager: ObservableObject {
 
     func handleRedirect(url: URL) {
         guard
-            url.scheme == "com.KathirD.sonar",
+            url.scheme?.lowercased() == "com.kathird.sonar",
             let code = URLComponents(url: url, resolvingAgainstBaseURL: false)?
                 .queryItems?.first(where: { $0.name == "code" })?.value,
             let codeVerifier = UserDefaults.standard.string(

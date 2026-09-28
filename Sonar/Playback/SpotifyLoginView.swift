@@ -10,7 +10,7 @@ struct SpotifyLoginView: View {
         "1. Visit developer.spotify.com/dashboard",
         "2. Log in and click “Create an App”",
         "3. Fill out name & description (e.g. Sonar)",
-        "4. Set this redirect URI:\n com.KathirD.sonar://callback",
+        "4. Set this redirect URI:\n com.kathird.sonar://callback",
         "5. Save and copy your Client ID above",
     ]
 
@@ -275,7 +275,7 @@ struct SpotifyLoginView: View {
                                 )
 
                             HStack(spacing: 8) {
-                                Text("com.KathirD.sonar://callback")
+                                Text("com.kathird.sonar://callback")
                                     .font(
                                         .system(size: 13, design: .monospaced)
                                     )
@@ -289,7 +289,7 @@ struct SpotifyLoginView: View {
                                     let pasteboard = NSPasteboard.general
                                     pasteboard.clearContents()
                                     pasteboard.setString(
-                                        "com.KathirD.sonar://callback",
+                                        "com.kathird.sonar://callback",
                                         forType: .string
                                     )
                                 }) {

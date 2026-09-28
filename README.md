@@ -1,56 +1,69 @@
 # Sonar
 
-Spotify in your macOS menu bar, with hybrid auto-pause. macOS 15+ only, Spotify-only.
+[![CI](https://github.com/Kathir-D/Sonar/actions/workflows/ci.yml/badge.svg)](https://github.com/Kathir-D/Sonar/actions/workflows/ci.yml)
+[![macOS 15+](https://img.shields.io/badge/macOS-15%2B-blue)](https://support.apple.com/macos)
+[![Spotify](https://img.shields.io/badge/Spotify-only-1DB954?logo=spotify&logoColor=white)](https://open.spotify.com)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-SpotMenu-style UI (artist/title in the menu bar, hover playback controls, like/unlike, next/prev, global shortcuts, compact/full, max-width) plus an Auto-Pause engine that fades + pauses Spotify when another app produces audio and resumes when quiet.
+> Spotify in your macOS menu bar, with hybrid auto-pause.
 
-> Status: working dev builds. `brew install --cask sonar` is the target install path (packaging in progress).
+Sonar shows the current artist/title in the menu bar with hover playback controls (play/pause, next/previous, like/unlike, global shortcuts, compact/full layouts) and fades + pauses Spotify automatically when another app produces audio — then resumes when it's quiet.
+
+<!-- Demo GIF wanted: menu-bar + YouTube duck/resume. See TODO task 9. -->
+
+## Contents
+
+- [Features](#features)
+- [Install](#install)
+- [Spotify Setup](#spotify-setup)
+- [Usage](#usage)
+- [How It Works](#how-it-works)
+- [Permissions](#permissions)
+- [Building](#building)
+- [Cutting a Release](#cutting-a-release)
+- [Credits & Provenance](#credits--provenance)
+- [License](#license)
 
 ## Features
 
-- Identical SpotMenu-style UI: artist/title in menu bar, hover playback controls, like/unlike, next/prev, global shortcuts, compact/full, max-width.
-- Auto-Pause: hybrid CoreAudio tap (RMS, clean-room from Apple docs) + `IsRunningOutput` polling. Fade + Pause (2 s out / 2 s in) / Instant / Mute-only, configurable timings.
-- Ownership done right: resume-only-if-we-paused (same Spotify pid); any manual pause, volume change, restart, or quit releases ownership and preserves your volume.
-- Works with normal Spotify and `headless-spotify` (same `com.spotify.client` + AppleScript, no Premium needed).
+- **SpotMenu-style UI** — artist/title in the menu bar, hover playback controls, like/unlike, next/prev, global shortcuts, compact/full, max-width.
+- **Hybrid auto-pause** — CoreAudio tap (RMS loudness) fused with `IsRunningOutput` polling. Fade + Pause (2 s out / 2 s in), Instant, or Mute-only, with configurable timings.
+- **Ownership done right** — resumes only if Sonar paused Spotify (same pid); any manual pause, volume change, player restart, or quit releases ownership and preserves your volume.
+- **No Premium needed** — playback control via AppleScript. Works with normal Spotify and `headless-spotify` (same `com.spotify.client`).
 
 ## Install
 
-Build from source (Xcode 16+):
+**Homebrew (target path):**
 
 ```sh
-git clone <this-repo> && cd Sonar
+brew install --cask sonar
+```
+
+Packaging is in progress — until the first release, build from source (Xcode 16+):
+
+```sh
+git clone https://github.com/Kathir-D/Sonar.git && cd Sonar
 xcodebuild -project SpotMenu.xcodeproj -scheme Sonar -configuration Release build
 open ~/Library/Developer/Xcode/DerivedData/SpotMenu-*/Build/Products/Release/Sonar.app
 ```
 
-Release zips + Sparkle updates + Homebrew cask: see TODO tasks 10–12.
+## Spotify Setup
 
-## Cutting a release (owner checklist)
+Liking tracks needs a free Spotify app registration (playback control itself does not):
 
-1. `git remote add origin <your repo>` + push (remote is `https://github.com/Kathir-D/Sonar.git`).
-2. Bundle ID is `com.KathirD.sonar` (Xcode, `Info.plist` URL types, Spotify redirect URI + keychain, Cask zap, `PollDetector` self-exclusion). GitHub URLs already point at `Kathir-D/Sonar`.
-3. Sparkle: generate an EdDSA key, put the public key in `SUPublicEDKey`, keep the private key for `sign_update`.
-4. Bump `VERSION`, tag `vX.Y.Z`, push (CI builds, tests, packages, publishes the zip).
-5. `scripts/sign-release.sh --release` with `DEVELOPER_ID` + `NOTARY_PROFILE`, then re-attach the stapled zip to the GitHub Release.
-6. `scripts/generate-appcast.sh <ver> <zip-url>` (signed) → publish `appcast.xml` at the `SUFeedURL` location.
-7. `scripts/bump-cask.sh <ver> <sha256>` → copy `Casks/sonar.rb` into your `homebrew-tap` repo → `brew audit --cask --strict sonar` (must pass) → `brew install/test/uninstall --zap` on a fresh user.
+1. Go to [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) → Create App (name e.g. `Sonar`).
+2. Add this Redirect URI:
+   `com.kathird.sonar://callback` (all lowercase — OAuth schemes are case-sensitive on the wire).
+3. Paste the Client ID into Sonar's Preferences → Music Player and log in.
 
-## Spotify Setup (liking)
+## Usage
 
-1. developer.spotify.com/dashboard → Create App (name e.g. `Sonar`)
-2. Redirect URI: `com.KathirD.sonar://callback`
-3. Paste Client ID in Preferences → Music Player
+- Click the menu-bar track to reveal controls; hover for playback buttons.
+- Preferences → Auto-Pause: mode (Fade+Pause / Instant / Mute-only), active/quiet durations, loudness threshold, all-except vs. watched-only app lists.
+- Preferences → Auto-Pause (diagnostics): state dot, poll/tap state, live RMS, duck/resume countdowns, last result, recent-sources finder, log path.
+- Log: `~/Library/Containers/com.KathirD.sonar/Data/Library/Logs/Sonar/sonar.log` (sandboxed dev builds; capped at 256 KB).
 
-No Premium required for playback control (AppleScript). No Soloist/librespot.
-
-## Permissions
-
-| Permission | Why | If denied |
-|---|---|---|
-| Audio Capture (`NSAudioCaptureUsageDescription`) | CoreAudio taps (RMS loudness) | poll-only fallback (no RMS, no fade loudness) |
-| Automation / AppleEvents for Spotify | pause/play/volume via AppleScript | auto-pause disabled; allow under System Settings › Privacy & Security › Automation |
-
-## How it works
+## How It Works
 
 ```
 Other-app audio (tap RMS) ─┐
@@ -62,16 +75,38 @@ IsRunningOutput poll ──────┘
 - Both quiet for ≥ Quiet duration (default 3 s) **and** Spotify still paused by us → resume.
 - Manual pause/volume/player-restart relinquishes ownership; stopped Spotify is never started.
 
-Diagnostics live in Preferences → Auto-Pause: state dot, poll/tap state, live RMS, duck/resume countdowns, last result, recent-sources finder, and the log path.
+## Permissions
 
-Log: `~/Library/Containers/com.KathirD.sonar/Data/Library/Logs/Sonar/sonar.log` (sandboxed dev builds; capped at 256 KB).
+| Permission | Why | If denied |
+|---|---|---|
+| Audio Capture (`NSAudioCaptureUsageDescription`) | CoreAudio taps (RMS loudness) | poll-only fallback (no RMS, no fade loudness) |
+| Automation / AppleEvents for Spotify | pause/play/volume via AppleScript | auto-pause disabled; allow under System Settings › Privacy & Security › Automation |
 
 ## Building
+
+Requirements: Xcode 16+, macOS 15 SDK, Swift 6.
 
 ```sh
 swift test --package-path Packages/AutoPauseEngine   # engine: 39 tests
 xcodebuild -project SpotMenu.xcodeproj -scheme Sonar -configuration Debug build
 ```
+
+Project layout: `Sonar/` (menu-bar UI, Xcode project) + `Packages/AutoPauseEngine` (testable detection/fusion/fade SPM library). See `TODO.md` for the build history and `THIRD-PARTY-NOTICES.md` for provenance.
+
+## Cutting a Release
+
+<details>
+<summary>Owner checklist (click to expand)</summary>
+
+1. Push to `main` (remote is `https://github.com/Kathir-D/Sonar.git`).
+2. Bundle ID is `com.KathirD.sonar`; OAuth redirect URI is lowercase `com.kathird.sonar://callback`.
+3. Sparkle: `SUPublicEDKey` is wired; keep the private key in the login Keychain for `sign_update` (never commit it).
+4. Bump `VERSION`, tag `vX.Y.Z`, push (CI builds, tests, packages, publishes the zip).
+5. `scripts/sign-release.sh --release` with `DEVELOPER_ID` + `NOTARY_PROFILE`, then re-attach the stapled zip to the GitHub Release.
+6. `scripts/generate-appcast.sh <ver> <zip-url>` (signed) → publish `appcast.xml` at the `SUFeedURL` location.
+7. `scripts/bump-cask.sh <ver> <sha256>` → copy `Casks/sonar.rb` into your `homebrew-tap` repo → `brew audit --cask --strict sonar` (must pass) → `brew install/test/uninstall --zap` on a fresh user.
+
+</details>
 
 ## Credits & Provenance
 
@@ -86,4 +121,4 @@ Full texts: see `THIRD-PARTY-NOTICES.md` + `LICENSE`.
 
 ## License
 
-MIT — see `LICENSE`.
+MIT — see [LICENSE](LICENSE).
