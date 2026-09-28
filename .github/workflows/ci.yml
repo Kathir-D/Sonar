@@ -1,12 +1,12 @@
 name: ci
-on:
+"on":
   push:
   pull_request:
 jobs:
   engine-tests:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: swift-actions/setup-swift@v2
         with:
           swift-version: "6.0"
@@ -14,5 +14,5 @@ jobs:
   app-build:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: xcodebuild -project SpotMenu.xcodeproj -scheme Sonar -configuration Debug build CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO

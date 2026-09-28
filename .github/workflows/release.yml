@@ -1,24 +1,30 @@
 name: release
-on:
+"on":
   push:
     tags: ["v*"]
+  workflow_dispatch:
 permissions:
   contents: write
 jobs:
   release:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: echo "${GITHUB_REF_NAME#v}" > VERSION
       - run: swift test --package-path Packages/AutoPauseEngine
+      # Empty CODE_SIGN_IDENTITY falls back to "-" (ad-hoc lane) in build-app.sh.
       - run: scripts/build-app.sh
         env:
-          CODE_SIGN_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID || '-' }}
+          CODE_SIGN_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID }}
       - run: scripts/package-release.sh
-      # Notarization runs only when owner secrets exist (Developer ID flow).
+      # Notarization runs only when the Developer ID secret exists.
       - name: notarize
-        if: ${{ secrets.APPLE_DEVELOPER_ID != '' }}
-        run: scripts/sign-release.sh --release
+        run: |
+          if [ -z "${DEVELOPER_ID:-}" ]; then
+            echo "No APPLE_DEVELOPER_ID secret — skipping notarization (ad-hoc artifact only)."
+            exit 0
+          fi
+          scripts/sign-release.sh --release
         env:
           DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
           NOTARY_PROFILE: sonar-notary
