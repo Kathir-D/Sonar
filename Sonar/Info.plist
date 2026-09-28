@@ -19,9 +19,9 @@
 			</array>
 		</dict>
 	</array>
-	<!-- Sparkle Update Configuration (owner: replace SUPublicEDKey + SUFeedURL with your own; see tasks 10-11) -->
+	<!-- Sparkle Update Configuration (EdDSA key generated 2026-09-28; private key in login Keychain, never commit it) -->
 	<key>SUPublicEDKey</key>
-	<string>BzDKlhTkBhiTizw1GoS4Lxq7rWs7fh2vZuHz3OojDuE=</string>
+	<string>l8XHojmyhmJREzYTiQSTqepogx5KlO4P9S06gsqk+GQ=</string>
 	<key>SUFeedURL</key>
 	<string>https://github.com/Kathir-D/Sonar/releases/latest/download/appcast.xml</string>
 	<!-- Enable Sparkle's Installer XPC Service for sandboxed updates -->
