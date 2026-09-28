@@ -9,8 +9,8 @@ struct SpotifyLoginView: View {
     private let instructions: [String] = [
         "1. Visit developer.spotify.com/dashboard",
         "2. Log in and click “Create an App”",
-        "3. Fill out name & description (e.g. SpotMenu)",
-        "4. Set this redirect URI:\n com.github.kmikiy.spotmenu://callback",
+        "3. Fill out name & description (e.g. Sonar)",
+        "4. Set this redirect URI:\n com.you.sonar://callback",
         "5. Save and copy your Client ID above",
     ]
 
@@ -34,7 +34,7 @@ struct SpotifyLoginView: View {
                             .shadow(radius: 4)
                     }
 
-                    Text("SpotMenu")
+                    Text("Sonar")
                         .font(.system(size: 26, weight: .bold))
                         .foregroundColor(.white)
 
@@ -147,7 +147,7 @@ struct SpotifyLoginView: View {
     private var introStep: some View {
         VStack(spacing: 20) {
             Text(
-                "SpotMenu needs access to the Spotify Web API to support liking tracks. AppleScript doesn't support liking on Spotify, so we use the Web API."
+                "Sonar needs access to the Spotify Web API to support liking tracks. AppleScript doesn't support liking on Spotify, so we use the Web API."
             )
             .font(.body)
             .foregroundColor(.white.opacity(0.8))
@@ -275,7 +275,7 @@ struct SpotifyLoginView: View {
                                 )
 
                             HStack(spacing: 8) {
-                                Text("com.github.kmikiy.spotmenu://callback")
+                                Text("com.you.sonar://callback")
                                     .font(
                                         .system(size: 13, design: .monospaced)
                                     )
@@ -289,7 +289,7 @@ struct SpotifyLoginView: View {
                                     let pasteboard = NSPasteboard.general
                                     pasteboard.clearContents()
                                     pasteboard.setString(
-                                        "com.github.kmikiy.spotmenu://callback",
+                                        "com.you.sonar://callback",
                                         forType: .string
                                     )
                                 }) {

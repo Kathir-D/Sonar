@@ -5,23 +5,25 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>This app needs permission to control Spotify / Apple Music using AppleScript.</string>
+	<string>Sonar needs permission to control Spotify using AppleScript (read player state, pause/resume, volume for auto-pause).</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Sonar measures other apps' loudness to auto-pause Spotify. Without it, auto-pause falls back to process polling.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.github.kmikiy.SpotMenu</string>
+			<string>com.you.sonar</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.github.kmikiy.spotmenu</string>
+				<string>com.you.sonar</string>
 			</array>
 		</dict>
 	</array>
-	<!-- Sparkle Update Configuration -->
+	<!-- Sparkle Update Configuration (owner: replace SUPublicEDKey + SUFeedURL with your own; see tasks 10-11) -->
 	<key>SUPublicEDKey</key>
 	<string>BzDKlhTkBhiTizw1GoS4Lxq7rWs7fh2vZuHz3OojDuE=</string>
 	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/kmikiy/SpotMenu/master/appcast.xml</string>
+	<string>https://github.com/you/sonar/releases/latest/download/appcast.xml</string>
 	<!-- Enable Sparkle's Installer XPC Service for sandboxed updates -->
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>

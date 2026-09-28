@@ -57,7 +57,7 @@
 			exceptions = (
 				64BA17CC2E003386007A0612 /* Exceptions for "SpotMenu" folder in "SpotMenu" target */,
 			);
-			path = SpotMenu;
+			path = Sonar;
 			sourceTree = "<group>";
 		};
 		648170F92DFF5D2D002F5F05 /* SpotMenuTests */ = {
@@ -455,7 +455,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = SpotMenu/SpotMenu.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Sonar/Sonar.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -463,7 +463,9 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = SpotMenu/Info.plist;
+				INFOPLIST_FILE = Sonar/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Sonar;
+				INFOPLIST_KEY_CFBundleName = Sonar;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -471,8 +473,8 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 2.3.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.github.kmikiy.SpotMenu;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.you.sonar;
+				PRODUCT_NAME = Sonar;
 				REGISTER_APP_GROUPS = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -484,7 +486,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = SpotMenu/SpotMenu.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Sonar/Sonar.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -492,7 +494,9 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = SpotMenu/Info.plist;
+				INFOPLIST_FILE = Sonar/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Sonar;
+				INFOPLIST_KEY_CFBundleName = Sonar;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -500,8 +504,8 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 2.3.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.github.kmikiy.SpotMenu;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.you.sonar;
+				PRODUCT_NAME = Sonar;
 				REGISTER_APP_GROUPS = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -517,7 +521,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.github.kmikiy.SpotMenuTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.you.sonar.SpotMenuTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
@@ -534,7 +538,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.github.kmikiy.SpotMenuTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.you.sonar.SpotMenuTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
@@ -549,7 +553,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.github.kmikiy.SpotMenuUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.you.sonar.SpotMenuUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
@@ -564,7 +568,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.github.kmikiy.SpotMenuUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.you.sonar.SpotMenuUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;

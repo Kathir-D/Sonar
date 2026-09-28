@@ -26,7 +26,7 @@ struct AboutPreferencesView: View {
                         .frame(width: 128, height: 128)
                         .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
 
-                    Text("SpotMenu")
+                    Text("Sonar")
                         .font(.largeTitle)
                         .fontWeight(.bold)
 
@@ -44,21 +44,21 @@ struct AboutPreferencesView: View {
                     Text("Support Development")
                         .font(.headline)
 
-                    Text("SpotMenu is free and open source.\nIf you enjoy it, consider fueling my coffee addiction\nso I can mass produce more questionable side projects.")
+                    Text("Sonar is free and open source.\nMenu-bar Spotify viewer with hybrid auto-pause.\nBased on SpotMenu by @kmikiy (MIT).")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .lineSpacing(2)
 
                     Button(action: {
-                        if let url = URL(string: "https://paypal.me/kmikiy") {
+                        if let url = URL(string: "https://github.com/kmikiy/SpotMenu") {
                             NSWorkspace.shared.open(url)
                         }
                     }) {
                         HStack(spacing: 8) {
                             Image(systemName: "heart.fill")
                                 .foregroundStyle(.white)
-                            Text("Donate via PayPal")
+                            Text("SpotMenu upstream")
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
@@ -150,7 +150,8 @@ struct AboutPreferencesView: View {
                 // Links
                 VStack(spacing: 12) {
                     Button(action: {
-                        if let url = URL(string: "https://github.com/kmikiy/SpotMenu") {
+                        // Owner: replace `you` with the real GitHub user/org.
+                        if let url = URL(string: "https://github.com/you/sonar") {
                             NSWorkspace.shared.open(url)
                         }
                     }) {
@@ -160,24 +161,12 @@ struct AboutPreferencesView: View {
                         }
                     }
                     .buttonStyle(.link)
-
-                    Button(action: {
-                        if let url = URL(string: "https://kmikiy.github.io/SpotMenu") {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "globe")
-                            Text("Website")
-                        }
-                    }
-                    .buttonStyle(.link)
                 }
 
                 Spacer()
 
                 // Copyright
-                Text("Made with love by @kmikiy")
+                Text("Based on SpotMenu by @kmikiy · MIT")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                     .padding(.bottom, 20)

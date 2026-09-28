@@ -54,7 +54,7 @@ struct PreferencesView: View {
                     Button(action: {
                         NSApp.terminate(nil)
                     }) {
-                        Label("Quit SpotMenu", systemImage: "power")
+                        Label("Quit Sonar", systemImage: "power")
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)

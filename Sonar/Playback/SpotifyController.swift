@@ -142,7 +142,7 @@ class SpotifyController: MusicPlayerController {
     }
 
     func openApp() {
-        SpotMenu.openApp(bundleIdentifier: "com.spotify.client")
+        Sonar.openApp(bundleIdentifier: "com.spotify.client")
     }
 
     func toggleLiked() {

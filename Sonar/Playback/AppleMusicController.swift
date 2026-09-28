@@ -105,7 +105,7 @@ class AppleMusicController: MusicPlayerController {
     }
 
     func openApp() {
-        SpotMenu.openApp(bundleIdentifier: "com.apple.Music")
+        Sonar.openApp(bundleIdentifier: "com.apple.Music")
     }
 
     func toggleLiked() {
