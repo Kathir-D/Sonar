@@ -16,29 +16,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		648170F72DFF5D2D002F5F05 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 648170E02DFF5D2B002F5F05 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 648170E72DFF5D2B002F5F05;
-			remoteInfo = SpotMenu;
-		};
-		648171012DFF5D2D002F5F05 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 648170E02DFF5D2B002F5F05 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 648170E72DFF5D2B002F5F05;
-			remoteInfo = SpotMenu;
-		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		64134C2F2E05AF0E00EB3AE3 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		64134C312E05AF1800EB3AE3 /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
 		64134C332E05AF1E00EB3AE3 /* ISSUE_TEMPLATE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = ISSUE_TEMPLATE.md; sourceTree = "<group>"; };
-		648170E82DFF5D2B002F5F05 /* SpotMenu.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SpotMenu.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		648170F62DFF5D2D002F5F05 /* SpotMenuTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SpotMenuTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		648171002DFF5D2D002F5F05 /* SpotMenuUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SpotMenuUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		648170E82DFF5D2B002F5F05 /* Sonar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Sonar.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -60,16 +44,6 @@
 			path = Sonar;
 			sourceTree = "<group>";
 		};
-		648170F92DFF5D2D002F5F05 /* SpotMenuTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = SpotMenuTests;
-			sourceTree = "<group>";
-		};
-		648171032DFF5D2D002F5F05 /* SpotMenuUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = SpotMenuUITests;
-			sourceTree = "<group>";
-		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -83,20 +57,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		648170F32DFF5D2D002F5F05 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		648170FD2DFF5D2D002F5F05 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -107,8 +67,6 @@
 				64134C2F2E05AF0E00EB3AE3 /* README.md */,
 				64134C312E05AF1800EB3AE3 /* LICENSE */,
 				648170EA2DFF5D2B002F5F05 /* SpotMenu */,
-				648170F92DFF5D2D002F5F05 /* SpotMenuTests */,
-				648171032DFF5D2D002F5F05 /* SpotMenuUITests */,
 				648170E92DFF5D2B002F5F05 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -116,9 +74,7 @@
 		648170E92DFF5D2B002F5F05 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				648170E82DFF5D2B002F5F05 /* SpotMenu.app */,
-				648170F62DFF5D2D002F5F05 /* SpotMenuTests.xctest */,
-				648171002DFF5D2D002F5F05 /* SpotMenuUITests.xctest */,
+				648170E82DFF5D2B002F5F05 /* Sonar.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -149,54 +105,8 @@
 				7A11C3D4E5F60718293A4B5D /* AutoPauseEngine */,
 			);
 			productName = SpotMenu;
-			productReference = 648170E82DFF5D2B002F5F05 /* SpotMenu.app */;
+			productReference = 648170E82DFF5D2B002F5F05 /* Sonar.app */;
 			productType = "com.apple.product-type.application";
-		};
-		648170F52DFF5D2D002F5F05 /* SpotMenuTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 6481710D2DFF5D2D002F5F05 /* Build configuration list for PBXNativeTarget "SpotMenuTests" */;
-			buildPhases = (
-				648170F22DFF5D2D002F5F05 /* Sources */,
-				648170F32DFF5D2D002F5F05 /* Frameworks */,
-				648170F42DFF5D2D002F5F05 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				648170F82DFF5D2D002F5F05 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				648170F92DFF5D2D002F5F05 /* SpotMenuTests */,
-			);
-			name = SpotMenuTests;
-			packageProductDependencies = (
-			);
-			productName = SpotMenuTests;
-			productReference = 648170F62DFF5D2D002F5F05 /* SpotMenuTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
-		648170FF2DFF5D2D002F5F05 /* SpotMenuUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 648171102DFF5D2D002F5F05 /* Build configuration list for PBXNativeTarget "SpotMenuUITests" */;
-			buildPhases = (
-				648170FC2DFF5D2D002F5F05 /* Sources */,
-				648170FD2DFF5D2D002F5F05 /* Frameworks */,
-				648170FE2DFF5D2D002F5F05 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				648171022DFF5D2D002F5F05 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				648171032DFF5D2D002F5F05 /* SpotMenuUITests */,
-			);
-			name = SpotMenuUITests;
-			packageProductDependencies = (
-			);
-			productName = SpotMenuUITests;
-			productReference = 648171002DFF5D2D002F5F05 /* SpotMenuUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
 
@@ -210,14 +120,6 @@
 				TargetAttributes = {
 					648170E72DFF5D2B002F5F05 = {
 						CreatedOnToolsVersion = 16.4;
-					};
-					648170F52DFF5D2D002F5F05 = {
-						CreatedOnToolsVersion = 16.4;
-						TestTargetID = 648170E72DFF5D2B002F5F05;
-					};
-					648170FF2DFF5D2D002F5F05 = {
-						CreatedOnToolsVersion = 16.4;
-						TestTargetID = 648170E72DFF5D2B002F5F05;
 					};
 				};
 			};
@@ -241,8 +143,6 @@
 			projectRoot = "";
 			targets = (
 				648170E72DFF5D2B002F5F05 /* SpotMenu */,
-				648170F52DFF5D2D002F5F05 /* SpotMenuTests */,
-				648170FF2DFF5D2D002F5F05 /* SpotMenuUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -255,20 +155,6 @@
 				64134C342E05AF1E00EB3AE3 /* ISSUE_TEMPLATE.md in Resources */,
 				64134C322E05AF1800EB3AE3 /* LICENSE in Resources */,
 				64134C302E05AF0E00EB3AE3 /* README.md in Resources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		648170F42DFF5D2D002F5F05 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		648170FE2DFF5D2D002F5F05 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -302,33 +188,9 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		648170F22DFF5D2D002F5F05 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		648170FC2DFF5D2D002F5F05 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		648170F82DFF5D2D002F5F05 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 648170E72DFF5D2B002F5F05 /* SpotMenu */;
-			targetProxy = 648170F72DFF5D2D002F5F05 /* PBXContainerItemProxy */;
-		};
-		648171022DFF5D2D002F5F05 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 648170E72DFF5D2B002F5F05 /* SpotMenu */;
-			targetProxy = 648171012DFF5D2D002F5F05 /* PBXContainerItemProxy */;
-		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
@@ -512,70 +374,6 @@
 			};
 			name = Release;
 		};
-		6481710E2DFF5D2D002F5F05 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.you.sonar.SpotMenuTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SpotMenu.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SpotMenu";
-			};
-			name = Debug;
-		};
-		6481710F2DFF5D2D002F5F05 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.you.sonar.SpotMenuTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SpotMenu.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SpotMenu";
-			};
-			name = Release;
-		};
-		648171112DFF5D2D002F5F05 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.you.sonar.SpotMenuUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = SpotMenu;
-			};
-			name = Debug;
-		};
-		648171122DFF5D2D002F5F05 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.you.sonar.SpotMenuUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = SpotMenu;
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -593,24 +391,6 @@
 			buildConfigurations = (
 				6481710B2DFF5D2D002F5F05 /* Debug */,
 				6481710C2DFF5D2D002F5F05 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		6481710D2DFF5D2D002F5F05 /* Build configuration list for PBXNativeTarget "SpotMenuTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				6481710E2DFF5D2D002F5F05 /* Debug */,
-				6481710F2DFF5D2D002F5F05 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		648171102DFF5D2D002F5F05 /* Build configuration list for PBXNativeTarget "SpotMenuUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				648171112DFF5D2D002F5F05 /* Debug */,
-				648171122DFF5D2D002F5F05 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

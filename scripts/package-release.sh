@@ -11,7 +11,7 @@ APP="$ROOT/dist/Sonar.app"
 mkdir -p "$OUT"
 rm -f "$OUT/Sonar-$VERSION.zip" "$OUT/SHA256SUMS.txt"
 
-ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT/Sonar-$VERSION.zip"
+COPYFILE_DISABLE=1 ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT/Sonar-$VERSION.zip"
 (cd "$OUT" && shasum -a 256 "Sonar-$VERSION.zip" > SHA256SUMS.txt)
 
 echo "Wrote $OUT/Sonar-$VERSION.zip"

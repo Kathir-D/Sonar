@@ -30,28 +30,6 @@
       shouldUseLaunchSchemeArgsEnv = "YES"
       shouldAutocreateTestPlan = "YES">
       <Testables>
-         <TestableReference
-            skipped = "NO"
-            parallelizable = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "648170F52DFF5D2D002F5F05"
-               BuildableName = "SpotMenuTests.xctest"
-               BlueprintName = "SpotMenuTests"
-               ReferencedContainer = "container:SpotMenu.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
-         <TestableReference
-            skipped = "NO"
-            parallelizable = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "648170FF2DFF5D2D002F5F05"
-               BuildableName = "SpotMenuUITests.xctest"
-               BlueprintName = "SpotMenuUITests"
-               ReferencedContainer = "container:SpotMenu.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction

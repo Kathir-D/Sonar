@@ -1,18 +1,18 @@
 #!/bin/sh
 # Fill Casks/sonar.rb from a built release.
-# Usage: scripts/bump-cask.sh <version> <sha256> <zip-url>
+# Usage: scripts/bump-cask.sh <version> <sha256>
+# (URL is derived from the version by Homebrew interpolation.)
 set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${1:?usage: bump-cask.sh <version> <sha256> <zip-url>}"
-SHA="${2:?usage: bump-cask.sh <version> <sha256> <zip-url>}"
-URL="${3:?usage: bump-cask.sh <version> <sha256> <zip-url>}"
+VERSION="${1:?usage: bump-cask.sh <version> <sha256>}"
+SHA="${2:?usage: bump-cask.sh <version> <sha256>}"
 
 cat > "$ROOT/Casks/sonar.rb" <<EOF
 cask "sonar" do
   version "$VERSION"
   sha256 "$SHA"
 
-  url "$URL"
+  url "https://github.com/you/sonar/releases/download/v#{version}/Sonar-#{version}.zip"
   name "Sonar"
   desc "Spotify in your macOS menu bar, with hybrid auto-pause"
   homepage "https://github.com/you/sonar"

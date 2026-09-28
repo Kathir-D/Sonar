@@ -25,6 +25,16 @@ open ~/Library/Developer/Xcode/DerivedData/SpotMenu-*/Build/Products/Release/Son
 
 Release zips + Sparkle updates + Homebrew cask: see TODO tasks 10–12.
 
+## Cutting a release (owner checklist)
+
+1. `git remote add origin <your repo>` + push (no remote is configured yet).
+2. Replace every `you` placeholder: `Casks/sonar.rb` homepage/url, `Sonar/Info.plist` `SUFeedURL`, About-pane GitHub link.
+3. Sparkle: generate an EdDSA key, put the public key in `SUPublicEDKey`, keep the private key for `sign_update`.
+4. Bump `VERSION`, tag `vX.Y.Z`, push (CI builds, tests, packages, publishes the zip).
+5. `scripts/sign-release.sh --release` with `DEVELOPER_ID` + `NOTARY_PROFILE`, then re-attach the stapled zip to the GitHub Release.
+6. `scripts/generate-appcast.sh <ver> <zip-url>` (signed) → publish `appcast.xml` at the `SUFeedURL` location.
+7. `scripts/bump-cask.sh <ver> <sha256>` → copy `Casks/sonar.rb` into your `homebrew-tap` repo → `brew audit --cask --strict sonar` (must pass) → `brew install/test/uninstall --zap` on a fresh user.
+
 ## Spotify Setup (liking)
 
 1. developer.spotify.com/dashboard → Create App (name e.g. `Sonar`)
