@@ -1,0 +1,17 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "compaction": {
+    "auto": true,
+    "keep": { "tokens": 15000 },
+    "buffer": 10000
+  },
+  "provider": {
+    "opencode": {
+      "models": {
+        "muse-spark-1.3-contributor-free": {
+          "limit": { "context": 250000, "input": 250000, "output": 32000 }
+        }
+      }
+    }
+  }
+}
