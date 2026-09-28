@@ -73,7 +73,7 @@ struct AboutPreferencesView: View {
 
                 // Description
                 VStack(spacing: 8) {
-                    Text("Spotify & Apple Music in your menu bar")
+                    Text("Spotify in your menu bar")
                         .font(.headline)
 
                     Text("Built with SwiftUI for macOS")

@@ -48,7 +48,9 @@ class MusicPlayerPreferencesModel: ObservableObject {
         {
             preferredMusicApp = app
         } else {
-            preferredMusicApp = .automatic
+            // Sonar is Spotify-only; legacy "automatic"/"appleMusic"
+            // values no longer decode and fall through to Spotify here.
+            preferredMusicApp = .spotify
         }
 
         likingEnabled =

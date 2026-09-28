@@ -9,7 +9,6 @@ extension Notification.Name {
 
 enum PlayerType {
     case spotify
-    case appleMusic
 }
 
 enum LongFormTitleStyle: String, CaseIterable, Identifiable {
@@ -28,18 +27,16 @@ enum LongFormTitleStyle: String, CaseIterable, Identifiable {
     }
 }
 
+/// Sonar is Spotify-only. A single case is kept (instead of a Bool) so any
+/// stored/legacy preference value decodes safely and migrates to `.spotify`.
 enum PreferredPlayer: String, CaseIterable, Identifiable {
-    case automatic
     case spotify
-    case appleMusic
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
-        case .automatic: return "Automatic"
         case .spotify: return "Spotify"
-        case .appleMusic: return "Apple Music"
         }
     }
 }
@@ -99,11 +96,11 @@ class PlaybackModel: ObservableObject {
     private var cancellable: AnyCancellable?
 
     var playerIconName: String {
-        return playerType == .appleMusic ? "AppleMusicIcon" : "SpotifyIcon"
+        return "SpotifyIcon"
     }
 
     var isLikingImplemented: Bool {
-        return playerType == .spotify
+        return true
     }
 
     init(preferences: MusicPlayerPreferencesModel) {
@@ -144,41 +141,10 @@ class PlaybackModel: ObservableObject {
     ) -> (
         MusicPlayerController, PlayerType
     ) {
-        let spotifyInstalled = isAppInstalled("com.spotify.client")
-        let appleMusicInstalled = isAppInstalled("com.apple.Music")
-        let spotifyRunning = isAppRunning("com.spotify.client")
-        let appleMusicRunning = isAppRunning("com.apple.Music")
-
-        switch preference {
-        case .appleMusic:
-            return (AppleMusicController(), .appleMusic)
-        case .spotify:
-            return (SpotifyController(preferences: preferences), .spotify)
-        case .automatic:
-            if spotifyRunning {
-                return (SpotifyController(preferences: preferences), .spotify)
-            } else if appleMusicRunning {
-                return (AppleMusicController(), .appleMusic)
-            } else if spotifyInstalled {
-                return (SpotifyController(preferences: preferences), .spotify)
-            } else if appleMusicInstalled {
-                return (AppleMusicController(), .appleMusic)
-            } else {
-                return (SpotifyController(preferences: preferences), .spotify)
-            }
-        }
-    }
-
-    private static func isAppInstalled(_ bundleIdentifier: String) -> Bool {
-        return NSWorkspace.shared.urlForApplication(
-            withBundleIdentifier: bundleIdentifier
-        ) != nil
-    }
-
-    private static func isAppRunning(_ bundleIdentifier: String) -> Bool {
-        return NSRunningApplication.runningApplications(
-            withBundleIdentifier: bundleIdentifier
-        ).count > 0
+        // Sonar is Spotify-only: every preference (including legacy
+        // "automatic"/"appleMusic" values) resolves to Spotify.
+        _ = preference
+        return (SpotifyController(preferences: preferences), .spotify)
     }
 
     func fetchInfo() {

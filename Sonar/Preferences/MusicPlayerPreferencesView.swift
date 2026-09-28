@@ -15,16 +15,17 @@ struct MusicPlayerPreferencesView: View {
             VStack(alignment: .leading, spacing: 20) {
                 Form {
                     Section {
-                        Picker("Preferred Player", selection: $model.preferredMusicApp) {
-                            ForEach(PreferredPlayer.allCases) { player in
-                                Text(player.displayName).tag(player)
-                            }
+                        HStack {
+                            Text("Spotify")
+                            Spacer()
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(.secondary)
                         }
                     } header: {
                         Text("Music Player")
                     } footer: {
                         Text(
-                            "\"Automatic\" selects the first available app at launch. If both Spotify and Apple Music are installed or running, Spotify is preferred."
+                            "Sonar is Spotify-only and always uses Spotify (same AppleScript contract covers the regular app and headless-spotify)."
                         )
                     }
                 }
