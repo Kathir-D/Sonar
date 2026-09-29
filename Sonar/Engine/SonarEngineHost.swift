@@ -25,6 +25,14 @@ final class SonarEngineHost: ObservableObject {
     @Published private(set) var loudCountdown: TimeInterval?
     @Published private(set) var quietCountdown: TimeInterval?
 
+    /// True only when the tap is genuinely capturing. Everything else -
+    /// unavailable, still starting, or no tap object - means detection is
+    /// running on process polling, which cannot tell silence from sound.
+    var tapIsOperational: Bool {
+        if case .active = controller.tap?.status { return true }
+        return false
+    }
+
     private var lastRulesFingerprint = ""
     private var cancellables = Set<AnyCancellable>()
 

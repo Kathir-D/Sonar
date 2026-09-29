@@ -32,6 +32,11 @@ struct AutoPausePreferencesView: View {
         .onAppear {
             recent.start()
             host.refreshDiagnostics()
+            // Auto-Pause ships enabled, so a user who never touches the
+            // switch would never be prompted. Check on open as well.
+            if model.enabled, !host.tapIsOperational {
+                showPermissionAlert = true
+            }
             liveApply = model.objectWillChange
                 .debounce(for: .milliseconds(200), scheduler: RunLoop.main)
                 .sink { [host, model] _ in host.apply(model) }
@@ -45,7 +50,7 @@ struct AutoPausePreferencesView: View {
             // process polling, which cannot tell silence from sound - so a
             // paused video can hold the resume for many seconds. Ask now,
             // while the user is actually turning the feature on.
-            if enabled, host.uiState == .tapUnavailable {
+            if enabled, !host.tapIsOperational {
                 showPermissionAlert = true
             }
         }
@@ -364,16 +369,46 @@ struct AutoPausePreferencesView: View {
     private var permissionsSection: some View {
         Form {
             Section {
-                Text(
-                    "Screen & System Audio Recording: required for loudness (RMS) detection. "
-                        + "Grant it under System Settings > Privacy & Security > Screen & "
-                        + "System Audio Recording. Until it is granted the tap cannot start "
-                        + "and Sonar falls back to process polling, which cannot tell silence "
-                        + "from sound."
-                )
-                Text("Automation: allow Sonar to control Spotify under System Settings > Privacy & Security > Automation, or auto-pause stays disabled with a hint.")
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Screen & System Audio Recording")
+                        Text(
+                            host.tapIsOperational
+                                ? "Granted - loudness detection is on"
+                                : "Needed so Sonar can measure loudness instead of guessing"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(
+                            host.tapIsOperational ? Color.green : Color.secondary
+                        )
+                    }
+                    Spacer()
+                    Button(host.tapIsOperational ? "Open" : "Grant") {
+                        openPrivacyPane(.screenRecording)
+                    }
+                }
+
+                Divider()
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Automation")
+                        Text("Lets Sonar pause and resume Spotify")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Open") { openPrivacyPane(.automation) }
+                }
             } header: {
                 Text("Permissions")
+            } footer: {
+                Text(
+                    "Without Screen & System Audio Recording, Sonar falls back to "
+                        + "process polling, which only knows whether an app is holding "
+                        + "the audio output - not whether it is making sound. A paused "
+                        + "video can then hold the resume for many seconds."
+                )
             }
         }
         .formStyle(.grouped)
