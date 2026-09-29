@@ -40,6 +40,32 @@ cp -R "$ROOT/dist/DerivedData/Build/Products/Release/Sonar.app" "$ROOT/dist/Sona
 # ad-hoc host. Sonar now embeds no framework, so a build is a single signing
 # identity and library validation passes on its own.
 
+# The build phase above stamps CFBundleVersion, but it stamps the *intermediate*
+# bundle under dist/DerivedData/Build/Intermediates.noindex. Xcode only copies
+# that into dist/DerivedData/Build/Products/Release when it decides the app
+# needs rebuilding - and "running swift test first" is enough to make it decide
+# that, because the local package's state changed. The phase still runs (it is
+# marked always-run), it stamps the intermediate plist, and the copy is skipped.
+# build-app.sh then ships a bundle whose build number is whatever
+# CURRENT_PROJECT_VERSION says.
+#
+# So re-assert the number on the copy that actually ships, and fail loudly
+# rather than publish a build that cannot be ordered against a later one.
+PLIST="$ROOT/dist/Sonar.app/Contents/Info.plist"
+expected_build_number="${BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || true)}"
+if [ -n "$expected_build_number" ]; then
+    actual_build_number="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST" 2>/dev/null || echo '')"
+    if [ "$actual_build_number" != "$expected_build_number" ]; then
+        echo "CFBundleVersion was $actual_build_number, expected $expected_build_number" >&2
+        echo "(Xcode skipped copying the bundle into Products; re-stamping the copy)" >&2
+        /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $expected_build_number" "$PLIST"
+        codesign --force --sign "$IDENTITY" "$ROOT/dist/Sonar.app"
+    fi
+elif [ -z "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST" 2>/dev/null || echo '')" ]; then
+    echo "error: could not determine or stamp CFBundleVersion" >&2
+    exit 1
+fi
+
 codesign -v "$ROOT/dist/Sonar.app"
 echo "Built $ROOT/dist/Sonar.app (version $VERSION, identity $IDENTITY)"
 echo "  CFBundleVersion: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$ROOT/dist/Sonar.app/Contents/Info.plist")"
