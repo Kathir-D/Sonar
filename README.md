@@ -194,11 +194,26 @@ brew trust Kathir-D/tap
 brew install --cask sonar
 ```
 
-Installs to `/Applications/Sonar.app` and updates with `brew upgrade --cask sonar`. **No Gatekeeper
-approval needed** — see the note below.
+Installs to `/Applications/Sonar.app`. **No Gatekeeper approval needed** — see the note below.
 
 `brew trust` is required: Homebrew 7 refuses to load casks from an untrusted tap, and without it
 you get `Refusing to load cask kathir-d/tap/sonar from untrusted tap`.
+
+To update later:
+
+```sh
+brew update && brew upgrade --cask sonar
+```
+
+`brew update` refreshes the tap so Homebrew can see a new release. To check first without changing
+anything, `brew outdated --cask`. Or just watch the
+[releases page](https://github.com/Kathir-D/Sonar/releases) — there is no in-app updater, so a
+release you did not come from Homebrew will not announce itself.
+
+If you installed from a zip or from source, there is nothing to run: download the new build, or
+`git pull` and re-run `scripts/build-app.sh`. Either way, **reinstalling resets the permissions** —
+macOS ties the Screen & System Audio Recording grant to a code signature, so you will be asked for
+both permissions again. That is expected.
 
 > **Why a personal tap rather than `homebrew/cask`?** Homebrew's policy for its official cask repo
 > requires that apps which Gatekeeper can assess pass its Gatekeeper checks. Sonar is ad-hoc signed
