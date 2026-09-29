@@ -1,18 +1,41 @@
 # Releasing Sonar
 
 Everything that has to be true before `git tag v0.1.0`, and what the tag does. Written for
-Sonar 0.1.0, the first release; later releases only need step 1 and the tag.
+Sonar 0.1.0, the first release; later releases only need the two steps in "Ship it".
 
-The short version: **the code is ready, and the release is blocked on credentials that live in
-your Apple Developer account, not in the repository.** A tag without them produces an ad-hoc,
-un-notarized build that Gatekeeper refuses to open on every other Mac, and a cask that cannot
-install. So do not tag until step 1 is done.
+## You do not need a paid Apple account
+
+Notarization costs $99/year, and Sonar does not have it. The build is therefore **ad-hoc signed
+and un-notarized** — and that is a supported state, because of one measured fact:
+
+> Homebrew downloads with `curl`, which does **not** set the `com.apple.quarantine` attribute.
+> Gatekeeper only engages on a quarantined file. A curl-fetched, ad-hoc-signed Sonar installs to
+> `/Applications` and launches, and its audio tap works.
+
+Verified on this machine: fetched the zip over HTTP, installed it, launched it, and the Core Audio
+tap came up (`capture=true`, `rms` tracked) and drove a real duck in 486 ms.
+
+**So `brew install --cask sonar` is the supported install path, and it costs nothing.**
+
+### The one cost, stated plainly
+
+`spctl -a -vv` on the artifact reports `rejected`, because nothing signs it with a Developer ID.
+For anyone installing via Homebrew this is invisible. For someone who **downloads the zip in a
+browser** — which does set quarantine — macOS may require a one-time manual approval in
+**System Settings › Privacy & Security › Open Anyway**.
+
+This has *not* been tested on a clean Mac: this machine has a long approval history for
+`com.KathirD.sonar` from a session's worth of local builds, so the prompt could not be provoked
+here. Assume a first-time browser download hits it, and say so in the README rather than
+discovering it in someone's bug report.
+
+If you ever pay for the membership, skip to [If you later get a Developer account](#if-you-later-get-a-developer-account).
+Nothing below needs it.
 
 **Sonar has no in-app updater.** There is no update feed, no EdDSA signing key and no appcast.
 Updates come from `brew upgrade --cask sonar` or the releases page, which is what
-[About](Sonar/Preferences/AboutPreferencesView.swift) tells the user. That decision is why this
-runbook is four secrets long instead of five, and why the release pipeline is short enough to
-read in one sitting.
+[About](Sonar/Preferences/AboutPreferencesView.swift) tells the user. That is why the release
+pipeline is short enough to read in one sitting: it builds, packages, checksums, and uploads.
 
 ---
 
@@ -22,83 +45,57 @@ read in one sitting.
 | --- | --- |
 | Engine test suite | 272 tests, green. No hardware, no permission, no audio needed |
 | App build | `xcodebuild` clean, no new warnings |
-| End-to-end behaviour | `scripts/autopause-smoke.sh`: pause in **485 ms**, resume in **498 ms**, Instant preset, against a real tone through the real output device |
+| End-to-end behaviour | `scripts/autopause-smoke.sh`: pause in **486 ms**, resume in **482 ms**, Instant preset, against a real tone through the real output device |
+| A curl-fetched build installs | Fetched over HTTP, unzipped, installed, launched; the Core Audio tap came up and drove a real duck. No quarantine, so no Gatekeeper |
 | Release pipeline | `build-app.sh` → `package-release.sh` → `sign-release.sh`, dry-run end to end; 10 CI steps, no feed to sign |
 | `CFBundleVersion` | An increasing integer, not a git hash (this silently broke before) |
-| Cask, workflow | Cask checksum filled in by the release run; notary credentials created on the runner; a tag with a missing secret fails instead of shipping ad-hoc |
+| Cask, workflow | Cask checksum filled in by the release run; the run states its signing mode either way |
 | Documentation | README, and [HOW-AUTOPAUSE-WORKS.md](HOW-AUTOPAUSE-WORKS.md) for the engine |
 
 ## What is NOT verified, and cannot be from here
 
-This machine has **no signing identity** and the repository has **no secrets**. Developer ID
-signing and notarization therefore have never been executed — only the code path around them.
-They are the last two steps below and they are all credentials.
+- **A first-time browser download on a clean Mac.** See the note at the top; it could not be
+  reproduced here.
+- **`brew install --cask sonar` end to end**, because the tap repository does not exist yet
+  (step 6). The download half of it is verified.
+- `brew audit --cask --strict` — Homebrew's own audit is broken on this machine (a vendored-gem
+  incompatibility in Homebrew 7.0.6, unrelated to the cask). Run it once on a working machine.
 
 ---
 
-## 1. The Apple Developer account (one-time, ~20 min)
+## 1. Before you tag
 
-Needed for a build anyone else can open. A free personal team is not enough: notarization
-requires a paid membership.
-
-1. Enrol at <https://developer.apple.com/programs/> if you have not already.
-2. Create a **Developer ID Application** certificate. Easiest is Xcode:
-   **Xcode › Settings › Accounts › [your Apple ID] › Manage Certificates › + › Developer ID
-   Application**, then double-click the created certificate to add it to your keychain.
-   Verify with:
-
-   ```sh
-   security find-identity -v -p codesigning
-   # expect exactly one line ending "(Developer ID Application: ...)"
-   ```
-
-3. Create an **app-specific password** for notarization: <https://appleid.apple.com> › Sign-In
-   and Security › App-Specific Passwords. Apple will show it once.
-4. Find your **Team ID** at <https://developer.apple.com/account>.
-
-## 2. Put the credentials in GitHub secrets (once)
+Nothing to set up. There are no secrets to configure and no certificate to create. Confirm:
 
 ```sh
-gh secret set APPLE_DEVELOPER_ID                  # e.g. "Developer ID Application: Name (TEAM)"
-gh secret set APPLE_ID                            # your Apple ID email
-gh secret set APPLE_TEAM_ID                       # 10 chars, from step 1.4
-gh secret set APPLE_APP_SPECIFIC_PASSWORD         # from step 1.3
+git status --porcelain      # must be empty
+cat VERSION                 # the version you are about to tag
 ```
 
-There is no fifth secret. Nothing about an update feed needs signing.
+## 2. Rehearse, without publishing
 
-## 3. Check the release will be signed
-
-```sh
-git log --oneline -1                  # note the commit
-grep -c REPLACE_WITH_RELEASE_SHA256 Casks/sonar.rb   # 1 is expected: the run fills it in
-cat VERSION                           # 0.1.0
-```
-
-The placeholder in the cask is filled in by the release run itself, so it is correct to leave it.
-
-## 4. Dry-run the whole thing, without publishing
-
-Tag pushes publish. To rehearse without publishing, dispatch the workflow manually — it packages
-and signs but the publish step is skipped for anything that is not a tag:
+Tag pushes publish, so rehearse first. The manual dispatch builds, ad-hoc signs, zips and
+checksums, then stops — nothing is uploaded because nothing was tagged.
 
 ```sh
 gh workflow run release.yml
 gh run watch
 ```
 
-Check the log for:
+In the log you want `BUILD SUCCEEDED`, and one `::warning::` line saying the build is ad-hoc and
+un-notarized. That warning is correct, not a failure.
 
-- `BUILD SUCCEEDED`
-- `notarytool submit ... status: Accepted` — the line that actually matters
-- `spctl -a -vv` passing
-- the `cask-checksum` step filling in `Casks/sonar.rb` and finding no placeholder left
+## 3. Sanity-check before shipping
 
-## 5. Sanity-check the numbers once more
+The cask's checksum placeholder is expected and correct — the release run fills it in:
 
 ```sh
+grep -c REPLACE_WITH_RELEASE_SHA256 Casks/sonar.rb   # 1: correct
+cat VERSION                                            # the version you will tag
+
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-  swift test --package-path Packages/AutoPauseEngine
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+    swift test --package-path Packages/AutoPauseEngine
 
 sh scripts/autopause-smoke.sh --allow-playback
 ```
@@ -107,7 +104,7 @@ Expect **~0.5 s** to pause and resume. Anything above 2 s means detection is not
 measuring loudness; the smoke test says so rather than passing quietly. **Audio is a shared global
 resource: never run this while anything else is playing sound on the machine.**
 
-## 6. Ship it
+## 4. Ship it
 
 ```sh
 git tag -a v0.1.0 -m "Sonar 0.1.0"
@@ -118,7 +115,7 @@ gh run watch
 The workflow builds with your Developer ID, notarizes, staples, and uploads the zip, the checksums
 and the cask with its real checksum filled in.
 
-## 7. Verify the release as a user would
+## 5. Verify the release as a user would
 
 ```sh
 gh release view v0.1.0                     # zip + SHA256SUMS + sonar.rb attached
@@ -136,17 +133,44 @@ Then, in that order, because each depends on the last:
    says it is measuring loudness rather than *Process polling only*.
 4. Play something in a browser and confirm Spotify stops, and starts again when you stop.
 
-## 8. Announce, if you want to
+## 6. Publish the tap
 
-The cask installs with:
+`brew install --cask sonar` only resolves from a tap, which is a **separate, free GitHub
+repository** — this is the one thing left to do before anyone can install Sonar by name. It is
+about two minutes:
 
 ```sh
+gh repo create Kathir-D/homebrew-tap --public --description "Homebrew cask for Sonar"
+git clone https://github.com/Kathir-D/homebrew-tap ~/homebrew-tap
+mkdir -p ~/homebrew-tap/Casks
+cp /Users/kathirdev/Documents/projects/Sonar/Casks/sonar.rb ~/homebrew-tap/Casks/sonar.rb
+# The cask in the release assets already has the real checksum filled in.
+cd ~/homebrew-tap && git add Casks/sonar.rb && git commit -m "Sonar 0.1.0" && git push
+```
+
+Then, anywhere:
+
+```sh
+brew tap Kathir-D/tap
 brew install --cask sonar
 ```
 
-which needs a `homebrew-tap` repository — the cask is written here, but Homebrew resolves
-`brew install --cask` from a tap. Publishing a tap is a separate repository and is not part of this
-release. Until it exists, point people at the GitHub release zip.
+Verify with `brew list --cask sonar` and confirm `/Applications/Sonar.app` exists. To update later:
+`brew upgrade --cask sonar`.
+
+## If you later get a Developer account
+
+Nothing above changes, and nothing above depends on it. Adding a paid membership buys exactly one
+thing: the artifact stops being `rejected` by `spctl`, so browser downloads open without a manual
+approval step. To take it:
+
+1. Create a **Developer ID Application** certificate in Xcode (Settings › Accounts › Manage
+   Certificates). No iCloud sign-in is needed — the Apple ID inside Xcode is enough, and the
+   certificate goes to the login keychain, not iCloud Keychain.
+2. Add four repository secrets: `APPLE_DEVELOPER_ID`, `APPLE_ID`, `APPLE_TEAM_ID`,
+   `APPLE_APP_SPECIFIC_PASSWORD`. `.github/workflows/release.yml` already picks them up and signs,
+   notarizes and staples; the `signing-state` step reports which path ran.
+3. Re-tag. `sign-release.sh --release` needs `DEVELOPER_ID` and `NOTARY_PROFILE` locally.
 
 ---
 
@@ -154,12 +178,9 @@ release. Until it exists, point people at the GitHub release zip.
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| `no keychain profile: sonar-notary` | The workflow is older than the commit that creates it | Confirm `notary-credentials` is in `.github/workflows/release.yml` before `notarize` |
-| `Invalid Signature` from notarytool | Signed with a different identity than the one uploaded, or the zip was rebuilt after signing | `sign-release.sh` signs then zips; do not re-zip by hand afterwards |
-| `spctl` rejects the app | Not stapled, or notarized but not the stapled copy uploaded | The stapled app is what is zipped; upload *that* zip |
-| Users see "damaged and can't be opened" | Ad-hoc build, so no notarization happened — check `APPLE_DEVELOPER_ID` was set | Set the secret and re-tag |
-| `Refusing to publish vX.Y.Z` | One of the four Apple secrets is missing | `gh secret list`; the guard names the ones it cannot see |
-| The tag published an ad-hoc build | The guard was added after that release | Bump `VERSION` and cut a new tag |
+| A user reports "damaged and can't be opened" | They downloaded the zip in a browser, which quarantines it | Have them use `brew install --cask sonar`, or approve once in System Settings › Privacy & Security |
+| `brew install --cask sonar` says no such cask | The tap does not exist yet | See [the tap](#6-publish-the-tap) — it is a separate, free GitHub repository |
+| `gh release view` shows a placeholder sha | The cask-checksum step did not run | It only runs on tag pushes; a manual dispatch never fills it |
 
 ## After the release
 

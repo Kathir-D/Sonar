@@ -155,19 +155,27 @@ stops matching a preset, and the pane says why.
 
 ## Install
 
-> **Status: not released yet.** `VERSION` is `0.1.0`, nothing has been tagged, and there is no
-> signed build to download. Build from source for now — it takes about a minute and works
-> perfectly well, with one caveat about permissions below.
+Sonar is **not** signed with a paid Apple Developer ID, so it is ad-hoc signed and un-notarized.
+That is deliberate: the project has no budget for the $99/year membership. It has one consequence,
+and it is small.
+
+**Homebrew is the supported install path, and it is unaffected.** Homebrew downloads with `curl`,
+which does not set the `com.apple.quarantine` attribute, and Gatekeeper only ever engages on a
+quarantined file. A curl-fetched, ad-hoc Sonar installs to `/Applications` and launches.
+
+Downloading the zip in a *browser* does set quarantine, so macOS may ask you to approve the app
+once in **System Settings › Privacy & Security › Open Anyway**. Prefer the cask.
 
 ### Homebrew
 
 ```sh
+brew tap Kathir-D/tap
 brew install --cask sonar
 ```
 
-The cask lives at [`Casks/sonar.rb`](Casks/sonar.rb). Its checksum is filled in by the release run
-itself, so this starts working as soon as a signed release is tagged. Until then the file carries a
-placeholder and will not install.
+Lands in `/Applications/Sonar.app`. The cask lives at [`Casks/sonar.rb`](Casks/sonar.rb) and is
+mirrored into the [`homebrew-tap`](https://github.com/Kathir-D/homebrew-tap) repository; its
+checksum is filled in by the release run. Update later with `brew upgrade --cask sonar`.
 
 ### Build from source
 
@@ -192,9 +200,8 @@ no main window — so look for the Spotify track in the menu bar.
 
 > **One caveat for builds from source.** A local build is ad-hoc signed, and macOS ties the
 > Screen & System Audio Recording grant to a code signature. **Every rebuild therefore invalidates
-> the grant and macOS asks again.** That is expected, not a bug, and it is why the release pipeline
-> signs properly. The first launch of an ad-hoc build also needs **System Settings › Privacy &
-> Security › Open Anyway**.
+> the grant and macOS asks again.** That is expected, not a bug, and it applies equally to the
+> cask install.
 
 [⬆ Back to top](#sonar)
 
@@ -442,9 +449,10 @@ Stated plainly, so nobody rediscovers them as if they were new.
 <details>
 <summary><strong>The app will not open — "Sonar" cannot be opened</strong></summary>
 
-Locally built apps are ad-hoc signed. Open **System Settings › Privacy & Security** and click
-**Open Anyway**, or right-click the app in Finder › Open. Signed release zips from GitHub Releases
-are notarized and do not need this.
+Sonar is ad-hoc signed and un-notarized, because it has no paid Apple Developer account. Open
+**System Settings › Privacy & Security** and click **Open Anyway**, or right-click the app in
+Finder › Open. You will not normally hit this via `brew install --cask sonar`, because Homebrew's
+download is not quarantined.
 </details>
 
 <details>
@@ -617,7 +625,7 @@ scripts/build-app.sh
 | --- | --- |
 | `scripts/build-app.sh` | Release build → `dist/Sonar.app`, with `VERSION` and a git build number |
 | `scripts/package-release.sh` | Zip `dist/Sonar.app` → `dist/<ver>/Sonar-<ver>.zip` + `SHA256SUMS.txt` |
-| `scripts/sign-release.sh` | Ad-hoc verification locally; `--release` signs, notarizes, staples, and `spctl`-verifies |
+| `scripts/sign-release.sh` | Ad-hoc verification locally; `--release` signs, notarizes and staples, but only if a Developer ID is configured |
 | `scripts/bump-cask.sh` | Regenerate `Casks/sonar.rb` from a version and SHA-256 |
 | `scripts/autopause-smoke.sh` | End-to-end: force the Instant preset, play a test tone, and measure how long Spotify takes to pause and resume |
 
@@ -635,14 +643,15 @@ scripts/autopause-smoke.sh
 
 CI ([`ci.yml`](.github/workflows/ci.yml)) runs the engine tests and a Debug app build on every
 push and pull request. Releases ([`release.yml`](.github/workflows/release.yml)) run on `v*` tags:
-test, build, package, optionally notarize, and publish the zip plus checksums.
+test, build, package, checksum and publish the zip, the checksums and the cask. No secrets are
+required and nothing is notarized; the run says so in a warning.
 
 <details>
 <summary><strong>Maintainers: cutting a release</strong></summary>
 
-1. Bump `VERSION`, commit, tag `vX.Y.Z`, push the tag. CI tests, builds, signs, notarizes,
-   staples, and publishes `Sonar-<ver>.zip` and `SHA256SUMS.txt`. A tag push with any of the four
-   Apple secrets missing **fails** rather than publishing an ad-hoc build.
+1. Bump `VERSION`, commit, tag `vX.Y.Z`, push the tag. CI tests, builds, packages, and publishes
+   `Sonar-<ver>.zip`, `SHA256SUMS.txt` and the cask. No secrets needed; the run logs one warning
+   that the build is ad-hoc and un-notarized, which is expected.
 2. `scripts/bump-cask.sh <ver> <sha256>`, copy `Casks/sonar.rb` into the `homebrew-tap` repo, then
    `brew audit --cask --strict sonar` must pass, and verify
    `brew install` / `brew test` / `brew uninstall --zap` on a fresh user.

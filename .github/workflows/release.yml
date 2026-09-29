@@ -13,27 +13,24 @@ jobs:
       - run: echo "${GITHUB_REF_NAME#v}" > VERSION
       - run: swift test --package-path Packages/AutoPauseEngine
       # Empty CODE_SIGN_IDENTITY falls back to "-" (ad-hoc lane) in build-app.sh.
-      # A tag that publishes an ad-hoc build is worse than no release at all:
-      # Gatekeeper kills it on every other Mac, with a message that blames the
-      # app rather than the packaging. A manual dispatch may still produce an
-      # ad-hoc artifact for testing, so this only guards real releases.
-      - name: release-guard
+      # Sonar is distributed without a paid Apple Developer account, so this
+      # build is ad-hoc signed and NOT notarized. That is a supported state,
+      # not a mistake, with one measured consequence: Homebrew downloads with
+      # curl, which sets no quarantine attribute, so `brew install --cask`
+      # lands a working app in /Applications. A browser download does set it,
+      # and Gatekeeper's assessment of the app is "rejected", so a user who
+      # fetches the zip by hand may have to approve it once in System
+      # Settings > Privacy & Security. Warn loudly; do not block the release.
+      - name: signing-state
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          missing=""
-          for secret in APPLE_DEVELOPER_ID APPLE_ID APPLE_TEAM_ID APPLE_APP_SPECIFIC_PASSWORD; do
-            [ -n "$(printenv "$secret")" ] || missing="$missing $secret"
-          done
-          if [ -n "$missing" ]; then
-            echo "::error::Refusing to publish $GITHUB_REF_NAME. Missing secrets:$missing"
-            echo "An unsigned or un-notarized build cannot be installed by anyone else."
-            exit 1
+          if [ -z "${APPLE_DEVELOPER_ID:-}" ]; then
+            echo "::warning::No APPLE_DEVELOPER_ID secret. This release is ad-hoc signed and un-notarized. brew install --cask sonar is unaffected; browser downloads of the zip may require a one-time manual approval."
+          else
+            echo "Developer ID present: signing, notarizing and stapling."
           fi
         env:
           APPLE_DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
       - run: scripts/build-app.sh
         env:
           CODE_SIGN_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID }}
