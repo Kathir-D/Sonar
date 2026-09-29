@@ -63,10 +63,14 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
     /// When Spotify was last found not playing, so repeated duck ticks do not
     /// each pay for an AppleEvent round trip.
     private var lastSkipProbeAt: Date?
-    /// When we last took ownership by pausing, so a restore that arrives
-    /// before Spotify's own state has flipped is not mistaken for the user
-    /// pressing play.
-    private var duckedAt: Date?
+    /// When we last *sent* the pause command, so a state read that lands
+    /// before Spotify has caught up is not mistaken for the user pressing play.
+    ///
+    /// This is the pause, not the ownership: a fade owns the player for its
+    /// whole length, and the state can still be stale long after that.
+    private var pausedAt: Date?
+    /// How long after our own command a reported state is not yet trusted.
+    private static let stateSettleWindow: TimeInterval = 2.0
     /// True while the volume we are responsible for is being restored, so a
     /// reconcile landing mid-fade-in does not read our own `play` as the user
     /// having resumed by hand.
@@ -114,7 +118,22 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
     /// Duck Spotify because `source` is producing audio. Async on the serial
     /// queue; safe to call every tick (no-ops while already owned).
     public func duck(source: String) {
-        nextGeneration()
+        // Only supersede what is already running when this is genuinely a new
+        // action.
+        //
+        // The engine calls this on every 10 Hz tick for as long as another app
+        // is loud, so bumping the token unconditionally meant each new tick
+        // invalidated the fade already in flight: `fade()` checks the
+        // generation every step, saw it had moved, and bailed out before
+        // reaching the pause. In Fade mode that never paused Spotify at all -
+        // it just pinned the volume to zero and left the player running, which
+        // the reconcile then read as the user pressing play, so the engine
+        // gave up and started again, several times a second.
+        //
+        // Keying on "is a duck already in flight" rather than "are we owned"
+        // keeps the token doing its real job: a duck that arrives while a
+        // *restore* is running is a new action and must supersede it.
+        if !duckInProgress { nextGeneration() }
         // autoreleasepool: the AppleEvent round trip returns autoreleased
         // descriptors and this queue is a GCD worker thread.
         queue.async { [weak self] in
@@ -124,7 +143,9 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
 
     /// Restore Spotify after quiet. Async; no-ops unless owned.
     public func restore() {
-        nextGeneration()
+        // Same reasoning in the other direction: repeated restores while one
+        // is already running must not cancel each other.
+        if !restoreInProgress { nextGeneration() }
         queue.async { [weak self] in
             autoreleasepool { self?.restoreSync() }
         }
@@ -170,7 +191,35 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
         _ownedVolume = volume
         _duckedVolume = nil
         lastSkipProbeAt = nil
-        duckedAt = Date()
+        pausedAt = nil
+        lock.unlock()
+    }
+
+    /// The player state, re-read once if it may not have caught up with a
+    /// command we have just sent.
+    ///
+    /// Spotify does not flip `player state` in the same instant the pause or
+    /// play command returns. Reading it straight afterwards can return the
+    /// *previous* value, and "playing" read that way looks exactly like the
+    /// user pressing play: the adapter relinquishes a duck it is still in the
+    /// middle of, the engine immediately ducks again, and in Fade mode that
+    /// becomes a visible loop of fade-out / give-up / fade-out. Observed live.
+    private func settledPlayerState() -> SpotifyPlayerState? {
+        let state = control.playerState()
+        guard state == .playing else { return state }
+        lock.lock()
+        let sentPauseAt = pausedAt
+        lock.unlock()
+        guard let sentPauseAt,
+            Date().timeIntervalSince(sentPauseAt) < Self.stateSettleWindow
+        else { return state }
+        Thread.sleep(forTimeInterval: 0.2)
+        return control.playerState()
+    }
+
+    private func markPaused() {
+        lock.lock()
+        pausedAt = Date()
         lock.unlock()
     }
 
@@ -214,7 +263,7 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
         _ownedPID = nil
         _duckedVolume = nil
         lastSkipProbeAt = nil
-        duckedAt = nil
+        pausedAt = nil
         lock.unlock()
         onEvent?(.relinquished(reason))
         return reason
@@ -261,6 +310,7 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
             fade(to: 0, over: fadeOutDuration, generation: generation)
             guard generation == currentGeneration() else { return }
             control.pause()
+            markPaused()
             reread()
             if generation == currentGeneration() {
                 setDuckedVolume(control.volume())
@@ -274,6 +324,7 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
             setDuckedVolume(probe.volume)
             onDiagnostic?("duck: probe took \(Self.ms(since: duckStartedAt))ms, sending pause")
             control.pause()
+            markPaused()
             onDiagnostic?("duck: pause command returned in \(Self.ms(since: probedAt))ms")
             settle()
             onDiagnostic?("duck: complete in \(Self.ms(since: duckStartedAt))ms")
@@ -296,16 +347,9 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
             relinquish(reason: .pidChanged) // restart: new instance owns itself
             return
         }
-        var probe = control.stateAndVolume()
-        if probe.state == .playing, Date().timeIntervalSince(duckedAt ?? .distantPast) < 1.5 {
-            // We paused Spotify moments ago and it still reports "playing".
-            // That is Spotify's own state transition lagging behind the command,
-            // not the user pressing play - and treating it as a manual resume
-            // silently ends the duck, leaving the music paused for good. Give
-            // the state a moment to catch up before believing it.
-            Thread.sleep(forTimeInterval: 0.2)
-            probe = control.stateAndVolume()
-        }
+        // Give a reported state that may predate our own last command a moment
+        // to catch up, so our pause is not read back as the user pressing play.
+        let probe = (state: settledPlayerState(), volume: control.volume())
         switch probe.state {
         case .playing where mode == .muteOnly:
             // We muted; Spotify was never paused, so "playing" is expected.
@@ -314,7 +358,7 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
             lock.lock()
             _ownedPID = nil
             _duckedVolume = nil
-            duckedAt = nil
+            pausedAt = nil
             lock.unlock()
             onEvent?(.restored)
             return
@@ -356,7 +400,7 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
             lock.lock()
             _ownedPID = nil
             _duckedVolume = nil
-            duckedAt = nil
+            pausedAt = nil
             lock.unlock()
             onEvent?(.restored)
             return
@@ -373,7 +417,7 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
         lock.lock()
         _ownedPID = nil
         _duckedVolume = nil
-        duckedAt = nil
+        pausedAt = nil
         lock.unlock()
         onEvent?(.restored)
     }
@@ -396,7 +440,8 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
         // "playing" carries no information either - and getting it wrong made
         // the adapter fight itself, handing the volume back in the middle of
         // its own duck, which is the loud blare the mode exists to prevent.
-        let (state, volume) = control.stateAndVolume()
+        let volume = control.volume()
+        let state = settledPlayerState()
         let ourOwnChange = duckInProgress || restoreInProgress
         if state == .playing, !ourOwnChange, mode != .muteOnly {
             restoreVolumeIfUntouched(ownedVolume: owned.volume, duckedVolume: owned.ducked)

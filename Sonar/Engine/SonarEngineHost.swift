@@ -181,6 +181,9 @@ final class SonarEngineHost: ObservableObject {
 
     private func updateUIState() {
         drivingDetector = controller.drivingDetector
+        // Buffers arriving is the only proof that capture is permitted, so it
+        // is what the permissions pane goes by - see SonarPermissions.
+        SonarPermissions.shared.noteTapIsCapturing(tapIsOperational)
         if controller.adapter.isOwned {
             uiState = .ducked
             return

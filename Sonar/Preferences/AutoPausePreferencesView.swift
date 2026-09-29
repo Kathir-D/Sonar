@@ -578,7 +578,7 @@ struct AutoPausePreferencesView: View {
         isSelected: Bool,
         apply: (() -> Void)?
     ) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        let row = HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
                 .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
                 .accessibilityHidden(true)
@@ -593,10 +593,22 @@ struct AutoPausePreferencesView: View {
         }
         .padding(.vertical, 4)
         .contentShape(.rect)
-        .onTapGesture { apply?() }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(apply == nil ? [.isStaticText] : [.isButton])
-        .accessibilityLabel("\(title). \(blurb)")
+
+        // A real Button, not `.onTapGesture`. These rows live inside a Form,
+        // and a Form is a List: it claims taps on its rows for its own
+        // selection behaviour, so the gesture never arrived. Verified by
+        // clicking - Fade and Instant were simply not selectable, leaving
+        // whatever the last saved values happened to be.
+        if let apply {
+            return AnyView(
+                Button(action: apply) { row }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(title). \(blurb)")
+                    .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+            )
+        } else {
+            return AnyView(row.accessibilityElement(children: .combine))
+        }
     }
 
     // MARK: - Fade

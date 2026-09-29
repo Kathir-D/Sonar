@@ -75,6 +75,20 @@ final class SonarPermissions: ObservableObject {
     @Published private(set) var screenRecording: SonarPermissionState = .unknown
     @Published private(set) var automation: SonarPermissionState = .unknown
 
+    /// Whether the engine is actually receiving audio from the tap right now.
+    ///
+    /// This is the authority on capture, not `CGPreflightScreenCaptureAccess()`.
+    /// That call is documented for *screen* capture, and it answers "not
+    /// granted" for an ad-hoc-signed build whose system-audio tap is
+    /// demonstrably delivering audio - which is exactly what it does on a local
+    /// dev build, and would also mislead anyone whose OS ties the two services
+    /// together differently. Reporting "not granted" there would send a user
+    /// with a working feature into System Settings to grant something they
+    /// already have; and because a refused process is never re-prompted, there
+    /// would be no way back. Buffers arriving is the only honest evidence that
+    /// capture is permitted.
+    @Published private(set) var isMeasuringLoudness = false
+
     /// Permissions with a grant in flight. The state itself is left alone:
     /// blanking it to "unknown" would make a blocking permission look
     /// switchable for as long as the system dialog is up.
@@ -99,9 +113,22 @@ final class SonarPermissions: ObservableObject {
 
     func state(for permission: SonarPermission) -> SonarPermissionState {
         switch permission {
-        case .screenRecording: return screenRecording
-        case .automation: return automation
+        case .screenRecording:
+            return isMeasuringLoudness ? .granted : screenRecording
+        case .automation:
+            return automation
         }
+    }
+
+    /// Called by the engine whenever the tap starts or stops receiving
+    /// buffers.
+    func noteTapIsCapturing(_ capturing: Bool) {
+        guard capturing != isMeasuringLoudness else { return }
+        isMeasuringLoudness = capturing
+        SonarLog.write(
+            "permissions: loudness measurement \(capturing ? "working" : "not working") "
+                + "(preflight says \(screenRecording))"
+        )
     }
 
     func isRequesting(_ permission: SonarPermission) -> Bool {

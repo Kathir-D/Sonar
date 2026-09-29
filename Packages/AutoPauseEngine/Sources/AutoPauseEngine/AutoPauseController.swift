@@ -181,6 +181,26 @@ public final class AutoPauseController: @unchecked Sendable {
             } else {
                 decision = fusion.evaluate(poll: pollSignal, tap: nil)
             }
+            // Validate ownership on every tick, not only on `.hold`.
+            //
+            // Reconcile is the only thing that notices when the world stops
+            // matching our assumption - the user pressed play, paused it,
+            // moved the volume, quit Spotify, or it restarted. Restricting it
+            // to `.hold` meant a long loud streak never re-checked, so an
+            // ownership that had gone stale survived indefinitely: the engine
+            // believed it had paused Spotify, `duck()` short-circuited on
+            // `isOwned`, and auto-pause silently stopped working until the app
+            // was restarted. Seen live after toggling Auto-Pause off and on.
+            //
+            // The throttle is what keeps this affordable: one AppleEvent round
+            // trip per `reconcileInterval`, not per tick.
+            if adapter.isOwned, shouldReconcile() {
+                switch adapterDispatch {
+                case .onEngineQueue: adapter.reconcileSync()
+                case .onAdapterQueue: adapter.reconcile()
+                }
+            }
+
             tickCounter += 1
             let now = Date()
             if now.timeIntervalSince(lastTickReport) > 5 {
@@ -213,11 +233,7 @@ public final class AutoPauseController: @unchecked Sendable {
                 case .onAdapterQueue: adapter.restore()
                 }
             case .hold:
-                guard shouldReconcile() else { return }
-                switch adapterDispatch {
-                case .onEngineQueue: adapter.reconcileSync()
-                case .onAdapterQueue: adapter.reconcile()
-                }
+                break
             }
         }
     }
