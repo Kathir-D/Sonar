@@ -3,6 +3,7 @@
   <h1>Sonar</h1>
   <p><strong>Spotify in your macOS menu bar, with hybrid auto-pause.</strong></p>
   <p>
+    <a href="#about">About</a> ·
     <a href="#screenshots">Screenshots</a> ·
     <a href="#features">Features</a> ·
     <a href="#install">Install</a> ·
@@ -43,13 +44,44 @@ Numbers are measured from the moment sound reaches the speakers, not from a keyp
 
 ---
 
+## About
+
+Sonar puts the current Spotify track in your macOS menu bar, and gets out of the way when something
+else starts making noise — it pauses the music, and starts it again once the room goes quiet.
+
+The hard part is knowing whether anything is *actually* making a sound. A process poll cannot do it:
+a paused video in a browser still holds the audio output open, so a poll sees it as loud forever and
+your music never comes back. So Sonar installs a **Core Audio tap** and measures real loudness, and
+falls back to polling only when the tap is unavailable. A fusion state machine decides when to duck,
+and Sonar only ever resumes Spotify if *it* was the one that paused it — so a pause you did yourself
+is never undone.
+
+It is a fork of [SpotMenu](https://github.com/kmikiy/SpotMenu) by [@kmikiy](https://github.com/kmikiy),
+with the auto-pause engine written from scratch on top. The menu-bar UI, preference panes and Spotify
+controller are upstream's work, kept pixel-identical; see [Credits](#credits--provenance).
+
+| | |
+| --- | --- |
+| **Latest release** | [v0.1.2](https://github.com/Kathir-D/Sonar/releases/latest) — 0.5 s to pause, 0.5 s to resume |
+| **Install** | `brew tap Kathir-D/tap && brew trust Kathir-D/tap && brew install --cask sonar` |
+| **Requires** | macOS 15 or later, and the Spotify desktop app. No account tier needed |
+| **Cost** | Free, MIT, and no paid Apple account — so it is ad-hoc signed rather than notarized |
+
+```sh
+brew tap Kathir-D/tap
+brew trust Kathir-D/tap
+brew install --cask sonar
+```
+
 ## Contents
 
+- [About](#about)
 - [Screenshots](#screenshots)
 - [Features](#features)
 - [Requirements](#requirements)
 - [Install](#install)
-  - [Homebrew](#homebrew)
+  - [Homebrew (recommended)](#homebrew-recommended)
+  - [Direct download](#direct-download)
   - [Build from source](#build-from-source)
 - [Set up Spotify liking](#set-up-spotify-liking)
 - [Usage](#usage)
@@ -68,7 +100,7 @@ Numbers are measured from the moment sound reaches the speakers, not from a keyp
 - [Development](#development)
 - [Project layout](#project-layout)
 - [Contributing](#contributing)
-- [Credits &amp; provenance](#credits-provenance)
+- [Credits & provenance](#credits--provenance)
 - [License](#license)
 
 ---
