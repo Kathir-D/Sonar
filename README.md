@@ -377,15 +377,17 @@ Settings* after it has stopped asking.
 | **Screen & System Audio Recording** | It owns the Core Audio tap, so this is what lets it measure how loud other apps are — the only way to tell speech from silence | System Settings › Privacy & Security › **Screen & System Audio Recording** | Auto-Pause cannot be switched on at all. The toggle is disabled and the pane names the missing permission |
 | **Automation** (Apple Events) for `com.spotify.client` | Every Spotify action is an Apple Event: read the player state, pause, resume, set the volume | System Settings › Privacy & Security › **Automation**, listed under Sonar | Auto-Pause cannot be switched on at all — and because the menu bar reads the current track the same way, the track disappears from the menu bar and the playback controls stop doing anything |
 
-Two things degrade without turning anything off. If the screen-recording grant is in place but
-no audio is reaching Sonar — the permission exists, the capability does not — the state dot
-turns orange and reads *Watching by process only*, and detection falls back to polling, which
-cannot tell silence from sound. And if Spotify is not running, the Automation row says exactly
-that instead of reporting a permission problem, because there is nothing to ask it.
+Two things degrade without turning anything off. If the screen-recording grant is in place but no
+audio is reaching Sonar — the permission exists, the capability does not — the row reads *Granted,
+but no system audio is reaching Sonar yet*, the state line under the toggle turns orange and says
+*Process polling only*, and detection falls back to polling, which cannot tell silence from sound.
+And if Spotify is not running, the Automation row says exactly that instead of reporting a
+permission problem, because there is nothing to ask it.
 
 Once you have refused a permission, macOS will not prompt for it again: the button becomes *Open
-System Settings*, and the grant is bound to the app's code signature, so a rebuild can send you
-back to System Settings.
+System Settings* and the one beside it turns into *Re-check*. And because the grant is bound to the
+app's code signature, a rebuild from source can send you back to System Settings for the same
+reason — see the caveat under [Install](#install).
 
 Sonar is sandboxed (see `Sonar/Sonar.entitlements`) and asks for nothing else — no Accessibility,
 no Full Disk Access, no microphone. Its only entitlements beyond the sandbox are Apple Events to
@@ -499,7 +501,8 @@ Two different things, and the pane tells you which one you are looking at.
 - **It pauses, but a paused tab keeps the music from coming back.** With the detector on process
   polling, Sonar cannot measure silence, so it waits for the app to let go of the audio output.
   Browsers often keep an output stream open for a paused tab, and that can hold the resume for
-  many seconds. Watch the state dot: *Watching by process only* is this exact situation, and it
+  many seconds. Watch the state line under the toggle: *Process polling only* is this exact
+  situation, and it
   is fixed by granting Screen & System Audio Recording, not by waiting.
 </details>
 
