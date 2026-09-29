@@ -323,9 +323,13 @@ struct AutoPausePreferencesView: View {
             return "Not granted. Sonar needs this to \(permission.effect)."
         case .blocked:
             return "Turned off. Sonar needs this to \(permission.effect)."
-        case .targetNotRunning:
-            return "Spotify isn't running, so this is unchecked."
-        }
+    case .targetNotRunning:
+        // Apple Events cannot prompt about an app that is not running, so this
+        // state has no "Grant…" button - only a re-check. Naming the thing to do
+        // next matters, because otherwise the row looks identical to "granted but
+        // nothing works" and a user has no reason to start Spotify.
+        return "Spotify isn't running, so Sonar can't ask yet. Start Spotify, then Re-check."
+    }
     }
 
     private func permissionAction(

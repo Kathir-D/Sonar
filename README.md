@@ -28,11 +28,10 @@
 Sonar puts the current Spotify track in your macOS menu bar, and gets out of the way when something
 else starts making noise — it pauses the music, and starts it again once the room goes quiet.
 
-Deciding "is something actually making sound" is the hard part, and a process poll cannot do it: a
-paused video in a browser still holds the audio output open, so a poll sees it as loud forever and
-your music never comes back. So Sonar measures **real loudness** with a Core Audio tap, and uses
-polling only as a fallback. A fusion state machine decides when to duck, and Sonar only ever
-resumes Spotify if *it* was the one that paused it.
+Other apps don't always behave. Some hold their audio open even when they're not really playing
+anything, so Sonar can't always tell the difference between a video that's paused and one you've
+muted. When that happens, your music can start and stop at times that don't match what you're
+hearing.
 
 | | measured, on a MacBook Pro, Instant preset |
 | --- | --- |
@@ -414,6 +413,19 @@ Once you have refused a permission, macOS will not prompt for it again: the butt
 System Settings* and the one beside it turns into *Re-check*. And because the grant is bound to the
 app's code signature, a rebuild from source can send you back to System Settings for the same
 reason — see the caveat under [Install](#install).
+
+**If no prompt appears at all**, it is almost always one of two things rather than a bug:
+
+- **Spotify isn't running.** Apple Events cannot prompt about an app that isn't there, so there is no
+  *Grant…* button to press. The Automation row says *"Spotify isn't running, so Sonar can't ask
+  yet. Start Spotify, then Re-check."* Start it and press Re-check.
+- **Automation was already granted**, by an earlier build or by hand. The row will read *Granted*,
+  and macOS will not ask again.
+
+Either way the fix is the same: **System Settings › Privacy & Security**, then **Screen & System
+Audio Recording** for the loudness tap, and **Automation** for `com.spotify.client` — listed under
+Sonar, or under the terminal you launched from if you built Sonar from source. Toggle each one off
+and on again to force macOS to re-evaluate it, then press *Re-check*.
 
 Sonar is sandboxed (see `Sonar/Sonar.entitlements`) and asks for nothing else — no Accessibility,
 no Full Disk Access, no microphone. Its only entitlements beyond the sandbox are Apple Events to
