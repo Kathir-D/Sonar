@@ -7,14 +7,22 @@ cask "sonar" do
   desc "Spotify in your macOS menu bar, with hybrid auto-pause"
   homepage "https://github.com/Kathir-D/Sonar"
 
-  depends_on macos: ">= :sequoia"
-  conflicts_with cask: "spotmenu"
+  livecheck do
+    url :url
+    strategy :github_latest
+  end
+
+  depends_on macos: :sequoia
 
   app "Sonar.app"
 
+  uninstall quit: "com.KathirD.sonar"
+
   zap trash: [
+    "~/Library/Application Scripts/com.KathirD.sonar",
     "~/Library/Caches/com.KathirD.sonar",
     "~/Library/Containers/com.KathirD.sonar",
+    "~/Library/HTTPStorages/com.KathirD.sonar",
     "~/Library/Logs/Sonar",
     "~/Library/Preferences/com.KathirD.sonar.plist",
   ]
