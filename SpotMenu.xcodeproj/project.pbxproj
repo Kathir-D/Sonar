@@ -11,7 +11,6 @@
 		64134C322E05AF1800EB3AE3 /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = 64134C312E05AF1800EB3AE3 /* LICENSE */; };
 		64134C342E05AF1E00EB3AE3 /* ISSUE_TEMPLATE.md in Resources */ = {isa = PBXBuildFile; fileRef = 64134C332E05AF1E00EB3AE3 /* ISSUE_TEMPLATE.md */; };
 		648D41AD2E02904C001D8CE5 /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = 648D41AC2E02904C001D8CE5 /* KeyboardShortcuts */; };
-		64SPARKLE012F00000000001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 64SPARKLE012F00000000002 /* Sparkle */; };
 		7A11C3D4E5F60718293A4B5E /* AutoPauseEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 7A11C3D4E5F60718293A4B5D /* AutoPauseEngine */; };
 /* End PBXBuildFile section */
 
@@ -52,7 +51,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				648D41AD2E02904C001D8CE5 /* KeyboardShortcuts in Frameworks */,
-				64SPARKLE012F00000000001 /* Sparkle in Frameworks */,
 				7A11C3D4E5F60718293A4B5E /* AutoPauseEngine in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -101,7 +99,6 @@
 			name = SpotMenu;
 			packageProductDependencies = (
 				648D41AC2E02904C001D8CE5 /* KeyboardShortcuts */,
-				64SPARKLE012F00000000002 /* Sparkle */,
 				7A11C3D4E5F60718293A4B5D /* AutoPauseEngine */,
 			);
 			productName = SpotMenu;
@@ -134,7 +131,6 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				648D41A92E028FAF001D8CE5 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */,
-				64SPARKLE012F00000000003 /* XCRemoteSwiftPackageReference "Sparkle" */,
 				7A11C3D4E5F60718293A4B5C /* XCLocalSwiftPackageReference "AutoPauseEngine" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -177,7 +173,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# CFBundleVersion must be an INCREASING INTEGER.\n#\n# Sparkle decides whether an update is newer by comparing build numbers, and\n# this used to stamp the git short hash into the plist - which is not a\n# number, so every update check silently meant nothing. A release shipped with\n# a hash there can never be updated.\n#\n# Prefer an explicit build number (CI passes its run number). Otherwise use the\n# commit count, which is an integer and only ever increases.\n#\n# This phase runs after the Info.plist is generated, so it wins over whatever\n# CURRENT_PROJECT_VERSION was set to.\nbuild_number=\"${BUILD_NUMBER}\"\nif ! printf '%s' \"$build_number\" | grep -Eq '^[0-9]+$'; then\n    build_number=\"$(git rev-list --count HEAD 2>/dev/null || true)\"\nfi\nif ! printf '%s' \"$build_number\" | grep -Eq '^[0-9]+$'; then\n    echo \"warning: no numeric build number available; leaving CFBundleVersion as built\"\n    exit 0\nfi\n/usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $build_number\" \"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\necho \"Build number set to: $build_number\"";
+			shellScript = "# CFBundleVersion must be an INCREASING INTEGER.\n#\n# This used to stamp the git short hash into the plist, which is not a number,\n# so the build identity could not be ordered against any other build. Prefer an\n# explicit build number (CI passes its run number). Otherwise use the commit\n# count, which is an integer and only ever increases.\n#\n# This phase runs after the Info.plist is generated, so it wins over whatever\n# CURRENT_PROJECT_VERSION was set to.\nbuild_number=\"${BUILD_NUMBER}\"\nif ! printf '%s' \"$build_number\" | grep -Eq '^[0-9]+$'; then\n    build_number=\"$(git rev-list --count HEAD 2>/dev/null || true)\"\nfi\nif ! printf '%s' \"$build_number\" | grep -Eq '^[0-9]+$'; then\n    echo \"warning: no numeric build number available; leaving CFBundleVersion as built\"\n    exit 0\nfi\n/usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $build_number\" \"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\necho \"Build number set to: $build_number\"";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -407,14 +403,6 @@
 				minimumVersion = 2.3.0;
 			};
 		};
-		64SPARKLE012F00000000003 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/sparkle-project/Sparkle";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.8.1;
-			};
-		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -429,11 +417,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 648D41A92E028FAF001D8CE5 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */;
 			productName = KeyboardShortcuts;
-		};
-		64SPARKLE012F00000000002 /* Sparkle */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 64SPARKLE012F00000000003 /* XCRemoteSwiftPackageReference "Sparkle" */;
-			productName = Sparkle;
 		};
 		7A11C3D4E5F60718293A4B5D /* AutoPauseEngine */ = {
 			isa = XCSwiftPackageProductDependency;

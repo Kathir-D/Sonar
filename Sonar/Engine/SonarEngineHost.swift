@@ -10,6 +10,13 @@ enum AutoPauseUIState: String {
     case tapUnavailable
 }
 
+/// A weak, Sendable reference to the host, for handing `onEvent` back to the
+/// main thread.
+private final class WeakHost: @unchecked Sendable {
+    weak var value: SonarEngineHost?
+    init(_ value: SonarEngineHost) { self.value = value }
+}
+
 /// App singleton owning the `AutoPauseController`. Applies prefs live;
 /// the tap itself rebuilds only when its rules change (see TapDetector).
 final class SonarEngineHost: ObservableObject {
@@ -45,8 +52,15 @@ final class SonarEngineHost: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     init() {
-        controller.onEvent = { [weak self] event in
-            DispatchQueue.main.async { self?.handle(event) }
+        // The engine calls this on its own queue, and `handle` mutates
+        // @Published state, so the hop to main is required. Going through a
+        // weak box keeps the `@Sendable` closure holding only Sendable things:
+        // capturing `self` directly would either retain the host for as long as
+        // the engine lives, or - with `[weak self]` - capture an optional
+        // `var` that Swift 6 will not let a concurrent closure touch.
+        let host = WeakHost(self)
+        controller.onEvent = { event in
+            DispatchQueue.main.async { host.value?.handle(event) }
         }
         // One-off build facts (the stream format the HAL settled on, an
         // aggregate that never came alive) belong in the log next to the

@@ -13,11 +13,32 @@ jobs:
       - run: echo "${GITHUB_REF_NAME#v}" > VERSION
       - run: swift test --package-path Packages/AutoPauseEngine
       # Empty CODE_SIGN_IDENTITY falls back to "-" (ad-hoc lane) in build-app.sh.
+      # A tag that publishes an ad-hoc build is worse than no release at all:
+      # Gatekeeper kills it on every other Mac, with a message that blames the
+      # app rather than the packaging. A manual dispatch may still produce an
+      # ad-hoc artifact for testing, so this only guards real releases.
+      - name: release-guard
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          missing=""
+          for secret in APPLE_DEVELOPER_ID APPLE_ID APPLE_TEAM_ID APPLE_APP_SPECIFIC_PASSWORD; do
+            [ -n "$(printenv "$secret")" ] || missing="$missing $secret"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Refusing to publish $GITHUB_REF_NAME. Missing secrets:$missing"
+            echo "An unsigned or un-notarized build cannot be installed by anyone else."
+            exit 1
+          fi
+        env:
+          APPLE_DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
       - run: scripts/build-app.sh
         env:
           CODE_SIGN_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID }}
-          # CFBundleVersion must increase for Sparkle to ever offer an update.
-          # The repo's BUILD_NUMBER file is the fallback for local builds.
+          # CFBundleVersion is the build identity Homebrew and `about` show.
+          # The git commit count is the fallback for local builds.
           BUILD_NUMBER: ${{ github.run_number }}
       - run: scripts/package-release.sh
       # The keychain profile `sign-release.sh` uses has to exist on the runner
@@ -45,19 +66,6 @@ jobs:
         env:
           DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
           NOTARY_PROFILE: sonar-notary
-      # Must run AFTER notarization and BEFORE the upload: the feed records the
-      # exact size of the zip users download, and sign-release.sh re-zips the
-      # app after stapling. Fails the job rather than publishing a feed it
-      # cannot sign, because Sparkle would offer an unsigned item and then
-      # reject it at install time.
-      - name: appcast
-        if: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY != '' }}
-        run: scripts/generate-appcast.sh "${GITHUB_REF_NAME#v}"
-        env:
-          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
-          # sign_update is not on PATH; it ships inside the Sparkle package
-          # that scripts/build-app.sh already resolved into dist/.
-          SIGN_UPDATE: ${{ github.workspace }}/dist/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update
       # Fill in the cask's checksum so `brew install --cask` works without a
       # human editing a file between two CI runs.
       - name: cask-checksum
@@ -71,7 +79,7 @@ jobs:
         # Only publish on tag pushes; manual dispatches stop after packaging.
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: dist/*/Sonar-*.zip,dist/*/SHA256SUMS.txt,Sparkle/appcast.xml,Casks/sonar.rb
+          files: dist/*/Sonar-*.zip,dist/*/SHA256SUMS.txt,Casks/sonar.rb
           generate_release_notes: true
       # Owner: a follow-up job can push version+sha to your homebrew-tap
       # (scripts/bump-cask.sh) once the tap repo + token are configured.

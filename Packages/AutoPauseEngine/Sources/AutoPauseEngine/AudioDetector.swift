@@ -47,7 +47,16 @@ public enum AudioDetector {
         var a = addr(sel)
         var size = UInt32(MemoryLayout<T>.size)
         var v = zero
-        return AudioObjectGetPropertyData(obj, &a, 0, nil, &size, &v) == noErr ? v : nil
+        // AudioObjectGetPropertyData writes into an untyped buffer, so hand it
+        // the value's bytes rather than `&v`. Passing `&v` directly is a cast
+        // from a possibly-owning reference to a raw pointer, which the compiler
+        // rightly refuses to do implicitly.
+        let status = withUnsafeMutablePointer(to: &v) { ptr in
+            ptr.withMemoryRebound(to: UInt8.self, capacity: MemoryLayout<T>.size) { raw in
+                AudioObjectGetPropertyData(obj, &a, 0, nil, &size, raw)
+            }
+        }
+        return status == noErr ? v : nil
     }
 
     private static func getString(_ obj: AudioObjectID, _ sel: AudioObjectPropertySelector) -> String? {

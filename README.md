@@ -134,7 +134,7 @@ stops matching a preset, and the pane says why.
 - Preferences › Auto-Pause shows engine state, which detector is driving, tap RMS, duck and
   resume countdowns, the last decision, and the exact log path.
 - Bounded rotating log, capped at 256 KB.
-- In-app Sparkle updates with EdDSA-verified releases.
+- No in-app updater. New versions arrive via `brew upgrade --cask sonar` or the releases page.
 
 [⬆ Back to top](#sonar)
 
@@ -391,8 +391,8 @@ reason — see the caveat under [Install](#install).
 
 Sonar is sandboxed (see `Sonar/Sonar.entitlements`) and asks for nothing else — no Accessibility,
 no Full Disk Access, no microphone. Its only entitlements beyond the sandbox are Apple Events to
-`com.spotify.client` and network access for Spotify login and Sparkle updates, which is why the
-log lives inside the app's container.
+`com.spotify.client` and network access for Spotify login, which is why the log lives inside the
+app's container.
 
 [⬆ Back to top](#sonar)
 
@@ -429,8 +429,9 @@ Stated plainly, so nobody rediscovers them as if they were new.
   it when the room goes quiet, because from its side the two look identical.
 - **Force-quitting Sonar while it is holding the music** leaves Spotify paused. No code runs on a
   force quit, so nothing can clean up. Quitting normally restores it.
-- **Auto-update needs a Developer ID signed, notarized release.** An ad-hoc build from source is
-  never signed that way, and its Sparkle feed cannot be produced.
+- **A user who installed the app by hand has no way to update it.** Sonar has no in-app updater,
+  so `brew upgrade --cask sonar` only helps people who installed through Homebrew. Everyone else
+  has to notice a new release themselves.
 
 [⬆ Back to top](#sonar)
 
@@ -587,7 +588,7 @@ back instead of resuming it).
 | `Sonar/UI/` | Menu, popover window, status-item configuration |
 | `Sonar/Engine/` | Engine host, permission state, bounded log |
 | `Packages/AutoPauseEngine/` | The auto-pause engine as a standalone Swift package, with its own 272-test suite |
-| `scripts/` | Build, package, sign, appcast, cask and smoke-test helpers |
+| `scripts/` | Build, package, sign, cask and smoke-test helpers |
 | `docs/` | [The Auto-Pause deep dive](docs/HOW-AUTOPAUSE-WORKS.md), the [release runbook](docs/RELEASING.md), the engine audit and its release triage |
 
 The engine is a separate package on purpose: it has no dependency on AppKit UI, so the decision
@@ -617,7 +618,6 @@ scripts/build-app.sh
 | `scripts/build-app.sh` | Release build → `dist/Sonar.app`, with `VERSION` and a git build number |
 | `scripts/package-release.sh` | Zip `dist/Sonar.app` → `dist/<ver>/Sonar-<ver>.zip` + `SHA256SUMS.txt` |
 | `scripts/sign-release.sh` | Ad-hoc verification locally; `--release` signs, notarizes, staples, and `spctl`-verifies |
-| `scripts/generate-appcast.sh` | Write (and EdDSA-sign) the Sparkle `appcast.xml` for a version |
 | `scripts/bump-cask.sh` | Regenerate `Casks/sonar.rb` from a version and SHA-256 |
 | `scripts/autopause-smoke.sh` | End-to-end: force the Instant preset, play a test tone, and measure how long Spotify takes to pause and resume |
 
@@ -640,18 +640,17 @@ test, build, package, optionally notarize, and publish the zip plus checksums.
 <details>
 <summary><strong>Maintainers: cutting a release</strong></summary>
 
-1. Bump `VERSION`, commit, tag `vX.Y.Z`, push the tag. CI tests, builds, packages, and publishes
-   `Sonar-<ver>.zip` and `SHA256SUMS.txt`.
-2. `scripts/sign-release.sh --release` with `DEVELOPER_ID` and `NOTARY_PROFILE` set, then
-   re-attach the stapled zip to the GitHub Release. Without those secrets CI ships an ad-hoc
-   artifact and skips notarization.
-3. `scripts/generate-appcast.sh <ver> <zip-url>` (Sparkle CLI on `PATH` signs it) and publish
-   `appcast.xml` where `SUFeedURL` points — `releases/latest/download/appcast.xml`.
-4. `scripts/bump-cask.sh <ver> <sha256>`, copy `Casks/sonar.rb` into the `homebrew-tap` repo, then
+1. Bump `VERSION`, commit, tag `vX.Y.Z`, push the tag. CI tests, builds, signs, notarizes,
+   staples, and publishes `Sonar-<ver>.zip` and `SHA256SUMS.txt`. A tag push with any of the four
+   Apple secrets missing **fails** rather than publishing an ad-hoc build.
+2. `scripts/bump-cask.sh <ver> <sha256>`, copy `Casks/sonar.rb` into the `homebrew-tap` repo, then
    `brew audit --cask --strict sonar` must pass, and verify
    `brew install` / `brew test` / `brew uninstall --zap` on a fresh user.
-5. Keep the Sparkle private key in the login Keychain. `SUPublicEDKey` is committed; the private
-   half never is.
+3. There is no update feed to publish. Anything not installed through Homebrew has to be told
+   about new releases by hand.
+
+Full procedure, including the Apple Developer setup it depends on, is in
+[docs/RELEASING.md](docs/RELEASING.md).
 
 Bundle ID is `com.KathirD.sonar`. The OAuth redirect URI is lowercase
 `com.kathird.sonar://callback`.

@@ -1,4 +1,4 @@
-import Sparkle
+import AppKit
 import SwiftUI
 
 struct AboutPreferencesView: View {
@@ -10,11 +10,10 @@ struct AboutPreferencesView: View {
         Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "Unknown"
     }
 
-    // Sparkle updater (shared instance)
-    private var updater: SPUUpdater { UpdaterManager.shared.updater }
-    @State private var automaticallyChecksForUpdates = false
-    @State private var automaticallyDownloadsUpdates = false
-    @State private var lastUpdateCheckDate: Date?
+    /// The releases page, which is the update path now that Sonar has no
+    /// in-app updater. `AboutPreferencesView` is a static screen with no state,
+    /// so nothing here needs `@State`.
+    private static let releasesURL = URL(string: "https://github.com/Kathir-D/Sonar/releases")!
 
     var body: some View {
         ScrollView {
@@ -89,60 +88,31 @@ struct AboutPreferencesView: View {
                     Text("Software Updates")
                         .font(.headline)
 
-                    Toggle(
-                        "Automatically check for updates",
-                        isOn: Binding(
-                            get: { automaticallyChecksForUpdates },
-                            set: { newValue in
-                                automaticallyChecksForUpdates = newValue
-                                updater.automaticallyChecksForUpdates = newValue
-                            }
-                        )
-                    )
-                    .toggleStyle(.switch)
+                    Text("Sonar does not update itself. To move to a new version, either:")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
 
-                    Toggle(
-                        "Automatically download updates",
-                        isOn: Binding(
-                            get: { automaticallyDownloadsUpdates },
-                            set: { newValue in
-                                automaticallyDownloadsUpdates = newValue
-                                updater.automaticallyDownloadsUpdates = newValue
-                            }
-                        )
-                    )
-                    .toggleStyle(.switch)
-                    .disabled(!automaticallyChecksForUpdates)
+                    Text("brew upgrade --cask sonar")
+                        .font(.system(.subheadline, design: .monospaced))
+                        .textSelection(.enabled)
 
-                    HStack {
-                        Text("Last checked:")
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        if let lastCheck = lastUpdateCheckDate {
-                            Text(lastCheck.formatted(date: .abbreviated, time: .shortened))
-                                .foregroundStyle(.secondary)
-                        } else {
-                            Text("Never")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .font(.subheadline)
+                    Text("if you installed it with Homebrew, or download it from the releases page.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
 
-                    Button("Check for Updates Now") {
-                        updater.checkForUpdates()
-                        // Update the displayed date after a short delay
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                            lastUpdateCheckDate = updater.lastUpdateCheckDate
+                    Button(action: {
+                        NSWorkspace.shared.open(Self.releasesURL)
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.down.circle")
+                            Text("Open Releases Page")
                         }
                     }
                     .buttonStyle(.borderedProminent)
                 }
                 .padding(.horizontal, 20)
-                .onAppear {
-                    automaticallyChecksForUpdates = updater.automaticallyChecksForUpdates
-                    automaticallyDownloadsUpdates = updater.automaticallyDownloadsUpdates
-                    lastUpdateCheckDate = updater.lastUpdateCheckDate
-                }
 
                 Divider()
                     .padding(.horizontal, 40)

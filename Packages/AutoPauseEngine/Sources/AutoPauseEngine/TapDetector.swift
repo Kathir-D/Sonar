@@ -1120,9 +1120,14 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
         )
         var uid: CFString = "" as CFString
         var uidSize = UInt32(MemoryLayout<CFString>.size)
-        guard AudioObjectGetPropertyData(
-            device, &uidAddr, 0, nil, &uidSize, &uid
-        ) == noErr else { return nil }
+        // As in AudioDetector: the CoreAudio getter writes untyped bytes, so
+        // pass the value's memory instead of casting a CFString to a pointer.
+        let status = withUnsafeMutablePointer(to: &uid) { ptr in
+            ptr.withMemoryRebound(to: UInt8.self, capacity: MemoryLayout<CFString>.size) { raw in
+                AudioObjectGetPropertyData(device, &uidAddr, 0, nil, &uidSize, raw)
+            }
+        }
+        guard status == noErr else { return nil }
         let value = uid as String
         return value.isEmpty ? nil : value
     }
@@ -1332,7 +1337,8 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
                 mElement: kAudioObjectPropertyElementMain
             )
             AudioObjectAddPropertyListenerBlock(sys, &dev, self.queue) { [weak self] _, _ in
-                self?.queue.async { self?.rebuildIfNeeded(reason: "device change") }
+                guard let self else { return }
+                self.queue.async { self.rebuildIfNeeded(reason: "device change") }
             }
             var procs = AudioObjectPropertyAddress(
                 mSelector: kAudioHardwarePropertyProcessObjectList,
@@ -1340,16 +1346,19 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
                 mElement: kAudioObjectPropertyElementMain
             )
             AudioObjectAddPropertyListenerBlock(sys, &procs, self.queue) { [weak self] _, _ in
-                self?.queue.async { self?.rebuildIfNeeded(reason: "process change") }
+                guard let self else { return }
+                self.queue.async { self.rebuildIfNeeded(reason: "process change") }
             }
         }
         let center = NSWorkspace.shared.notificationCenter
         sleepObservers = [
             center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: nil) { [weak self] _ in
-                self?.queue.async { self?.tearDownTap() }
+                guard let self else { return }
+                self.queue.async { self.tearDownTap() }
             },
             center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: nil) { [weak self] _ in
-                self?.queue.async { self?.rebuildIfNeeded(reason: "wake", force: true) }
+                guard let self else { return }
+                self.queue.async { self.rebuildIfNeeded(reason: "wake", force: true) }
             },
         ]
     }

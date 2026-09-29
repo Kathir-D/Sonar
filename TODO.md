@@ -32,7 +32,7 @@
 
 ### [x] 3. `feat!: rename to Sonar`
 - Why: new brand, avoid collision.
-- Do: bundle ID `com.KathirD.sonar`, `com.KathirD.sonar://callback`, display name Sonar, Sparkle appcast URL, Info.plist `NSAudioCaptureUsageDescription`.
+- Do: bundle ID `com.KathirD.sonar`, `com.KathirD.sonar://callback`, display name Sonar, Info.plist `NSAudioCaptureUsageDescription`.
 - Done when: app installs side-by-side with SpotMenu, liking callback uses new URI (update Spotify Dashboard).
 
 ### [x] 4. `feat: enforce Spotify-only`
@@ -77,9 +77,12 @@
 
 Why: `brew install --cask sonar` is the target install path.
 
-### [x] 10. `feat: release packaging (zip + checksums + Sparkle)`
-- Do: `scripts/build-app.sh` (build Release, inject `VERSION` into Info.plist), `scripts/package-release.sh` → `dist/<ver>/Sonar-<ver>.zip` + `SHA256SUMS.txt`; keep Sparkle `appcast.xml` signed (EdDSA) and in sync with `VERSION`.
-- Done when: clean VM can unzip + run, About shows VERSION, Sparkle update check works.
+### [x] 10. `feat: release packaging (zip + checksums + Homebrew cask)`
+- Do: `scripts/build-app.sh` (build Release, inject `VERSION` into Info.plist), `scripts/package-release.sh` → `dist/<ver>/Sonar-<ver>.zip` + `SHA256SUMS.txt`; keep `Casks/sonar.rb` in sync with the release.
+- Done when: clean VM can unzip + run, About shows VERSION, `brew install --cask` works.
+
+  *Revised after the 0.1.0 decision to drop the in-app updater: releases ship as a signed,
+  notarized zip and a cask, and `brew upgrade --cask sonar` is the update path.*
 
 ### [x] 11. `feat: signing + notarization`
 - Why: Gatekeeper + Homebrew cask warnings otherwise (`Open Anyway` fallback for ad-hoc dev only).
