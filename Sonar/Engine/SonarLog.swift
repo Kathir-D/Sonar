@@ -32,7 +32,8 @@ enum SonarLog {
                 if let handle = try? FileHandle(forWritingTo: url) {
                     try? handle.seekToEnd()
                     try? handle.write(contentsOf: data)
-                    try? handle.close()
+                    // `close()` reports success, which the log has no use for.
+                    _ = try? handle.close()
                 }
             } else {
                 try? data.write(to: url)
