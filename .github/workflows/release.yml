@@ -89,6 +89,9 @@ jobs:
             exit 1
           fi
           sed -i.bak "s/REPLACE_WITH_RELEASE_SHA256/$SHA/" Casks/sonar.rb
+          # The tag is the version. Without this the cask keeps whatever
+          # version was last hand-edited and points at the wrong zip.
+          sed -i.bak "s/^  version \".*\"/  version \"${GITHUB_REF_NAME#v}\"/" Casks/sonar.rb
           rm -f Casks/sonar.rb.bak
           if grep -q "REPLACE_WITH_RELEASE_SHA256" Casks/sonar.rb; then
             echo "::error::cask still holds the placeholder after substitution"
@@ -102,5 +105,32 @@ jobs:
         with:
           files: dist/*/Sonar-*.zip,dist/*/SHA256SUMS.txt,Casks/sonar.rb
           generate_release_notes: true
-      # Owner: a follow-up job can push version+sha to your homebrew-tap
-      # (scripts/bump-cask.sh) once the tap repo + token are configured.
+      # `brew install --cask kathir-d/tap/sonar` reads the cask from the tap,
+      # not from the release. TAP_DEPLOY_KEY is a deploy key with write access
+      # to Kathir-D/homebrew-tap and nothing else.
+      - name: publish-to-tap
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TAP_DEPLOY_KEY" ]; then
+            echo "::error::TAP_DEPLOY_KEY is not set, so the tap was not updated. The release is up; add the secret and re-run this job."
+            exit 1
+          fi
+          KEY="$RUNNER_TEMP/tap_key"
+          printf '%s\n' "$TAP_DEPLOY_KEY" > "$KEY" && chmod 600 "$KEY"
+          export GIT_SSH_COMMAND="ssh -i $KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          git clone --depth 1 git@github.com:Kathir-D/homebrew-tap.git "$RUNNER_TEMP/tap"
+          cp Casks/sonar.rb "$RUNNER_TEMP/tap/Casks/sonar.rb"
+          cd "$RUNNER_TEMP/tap"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/sonar.rb
+          # A re-run for the same tag has nothing new to commit.
+          if git diff --cached --quiet; then
+            echo "The tap already has sonar ${GITHUB_REF_NAME#v}."
+            exit 0
+          fi
+          git commit -m "sonar ${GITHUB_REF_NAME#v}"
+          git push origin HEAD

@@ -37,8 +37,6 @@ maintaining their own tap of unsigned software.
 ## What is NOT verified, and cannot be from here
 
 - **Gatekeeper on a clean Mac.** Expected to need one "Open Anyway", but not observed here.
-- **`brew install --cask sonar` end to end**, because the tap repository does not exist yet
-  (step 6). The download half of it is verified.
 - `brew audit --cask --strict` — Homebrew's own audit is broken on this machine (a vendored-gem
   incompatibility in Homebrew 7.0.6, unrelated to the cask). Run it once on a working machine.
 
@@ -114,30 +112,22 @@ Then, in that order, because each depends on the last:
    says it is measuring loudness rather than *Process polling only*.
 4. Play something in a browser and confirm Spotify stops, and starts again when you stop.
 
-## 6. Publish the tap
+## 6. The tap
 
-`brew install --cask sonar` only resolves from a tap, which is a **separate, free GitHub
-repository** — this is the one thing left to do before anyone can install Sonar by name. It is
-about two minutes:
-
-```sh
-gh repo create Kathir-D/homebrew-tap --public --description "Homebrew cask for Sonar"
-git clone https://github.com/Kathir-D/homebrew-tap ~/homebrew-tap
-mkdir -p ~/homebrew-tap/Casks
-cp /Users/kathirdev/Documents/projects/Sonar/Casks/sonar.rb ~/homebrew-tap/Casks/sonar.rb
-# The cask in the release assets already has the real checksum filled in.
-cd ~/homebrew-tap && git add Casks/sonar.rb && git commit -m "Sonar 0.1.0" && git push
-```
+`brew install --cask sonar` resolves from [`Kathir-D/homebrew-tap`](https://github.com/Kathir-D/homebrew-tap),
+a separate repository shared with headless-spotify and Stockroom. The release run's
+`publish-to-tap` step commits `Casks/sonar.rb` there, with the version and checksum filled in. It
+pushes with the `TAP_DEPLOY_KEY` secret: a deploy key on the tap with write access to that one
+repository. If the step fails, the GitHub release is already up; fix the key and re-run the job.
 
 Then, anywhere:
 
 ```sh
-brew tap Kathir-D/tap
-brew install --cask sonar
+brew update
+brew upgrade --cask sonar     # or: brew tap Kathir-D/tap && brew install --cask sonar
 ```
 
-Verify with `brew list --cask sonar` and confirm `/Applications/Sonar.app` exists. To update later:
-`brew upgrade --cask sonar`.
+Verify with `brew list --cask sonar` and confirm `/Applications/Sonar.app` exists.
 
 ## If you later get a Developer account
 
@@ -160,12 +150,12 @@ approval step. To take it:
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | A user reports "damaged and can't be opened" | They downloaded the zip in a browser, which quarantines it | Have them use `brew install --cask sonar`, or approve once in System Settings › Privacy & Security |
-| `brew install --cask sonar` says no such cask | The tap does not exist yet | See [the tap](#6-publish-the-tap) — it is a separate, free GitHub repository |
+| `brew install --cask sonar` says no such cask | The tap is not tapped, or not updated | `brew tap Kathir-D/tap && brew update`; see [the tap](#6-the-tap) |
 | `gh release view` shows a placeholder sha | The cask-checksum step did not run | It only runs on tag pushes; a manual dispatch never fills it |
 
 ## After the release
 
-- `Casks/sonar.rb` in the release assets has the real checksum in it. Copy it into your tap.
+- Check the `publish-to-tap` step went green, then `brew update && brew outdated --cask`.
 - The audit in [AUTOPAUSE-ENGINE-AUDIT.md](AUTOPAUSE-ENGINE-AUDIT.md) and the triage in
   [RELEASE-TRIAGE.md](RELEASE-TRIAGE.md) list what is still open. The known limitations in the
   README's Auto-Pause section are the user-visible ones.

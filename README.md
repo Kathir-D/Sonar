@@ -704,7 +704,7 @@ scripts/build-app.sh
 | `scripts/build-app.sh` | Release build → `dist/Sonar.app`, with `VERSION` and a git build number |
 | `scripts/package-release.sh` | Zip `dist/Sonar.app` → `dist/<ver>/Sonar-<ver>.zip` + `SHA256SUMS.txt` |
 | `scripts/sign-release.sh` | Ad-hoc verification locally; `--release` signs, notarizes and staples, but only if a Developer ID is configured |
-| `scripts/bump-cask.sh` | Regenerate `Casks/sonar.rb` from a version and SHA-256 |
+| `scripts/bump-cask.sh` | Fill a version and SHA-256 into `Casks/sonar.rb` (the release run does this itself) |
 | `scripts/autopause-smoke.sh` | End-to-end: force the Instant preset, play a test tone, and measure how long Spotify takes to pause and resume |
 
 The end-to-end check is deliberately not part of CI: it needs a real audio device, a running
@@ -721,18 +721,21 @@ scripts/autopause-smoke.sh
 
 CI ([`ci.yml`](.github/workflows/ci.yml)) runs the engine tests and a Debug app build on every
 push and pull request. Releases ([`release.yml`](.github/workflows/release.yml)) run on `v*` tags:
-test, build, package, checksum and publish the zip, the checksums and the cask. No secrets are
-required and nothing is notarized; the run says so in a warning.
+test, build, package, checksum and publish the zip, the checksums and the cask, and commit the cask
+to the tap. The only secret is `TAP_DEPLOY_KEY`; nothing is notarized, and the run says so in a
+warning.
 
 <details>
 <summary><strong>Maintainers: cutting a release</strong></summary>
 
 1. Bump `VERSION`, commit, tag `vX.Y.Z`, push the tag. CI tests, builds, packages, and publishes
-   `Sonar-<ver>.zip`, `SHA256SUMS.txt` and the cask. No secrets needed; the run logs one warning
-   that the build is ad-hoc and un-notarized, which is expected.
-2. `scripts/bump-cask.sh <ver> <sha256>`, copy `Casks/sonar.rb` into the `homebrew-tap` repo, then
-   `brew audit --cask --strict sonar` must pass, and verify
-   `brew install` / `brew test` / `brew uninstall --zap` on a fresh user.
+   `Sonar-<ver>.zip`, `SHA256SUMS.txt` and the cask, then commits the cask (version and SHA-256
+   filled in from the tag and the zip) to [`Kathir-D/homebrew-tap`](https://github.com/Kathir-D/homebrew-tap).
+   That push uses `TAP_DEPLOY_KEY`, a deploy key that can write to the tap only. The run logs one
+   warning that the build is ad-hoc and un-notarized, which is expected.
+2. `brew update && brew upgrade --cask sonar`, then `brew audit --cask --strict kathir-d/tap/sonar`
+   must pass. `scripts/bump-cask.sh <ver> <sha256>` does the same fill-in by hand if the tap step
+   ever has to be skipped.
 3. There is no update feed to publish. Anything not installed through Homebrew has to be told
    about new releases by hand.
 
