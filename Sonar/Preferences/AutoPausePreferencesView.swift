@@ -1,4 +1,5 @@
 import AutoPauseEngine
+import Combine
 import SwiftUI
 
 struct AutoPausePreferencesView: View {
@@ -6,7 +7,9 @@ struct AutoPausePreferencesView: View {
     @ObservedObject var host: SonarEngineHost
     @StateObject private var recent = RecentSourcesModel()
     @State private var newBundleID = ""
-    @State private var savedFlash = false
+    /// Re-applies engine settings whenever the model changes, so nothing has
+    /// to be confirmed. Debounced because the sliders emit continuously.
+    @State private var liveApply: AnyCancellable?
 
     var body: some View {
         ScrollView {
@@ -26,8 +29,14 @@ struct AutoPausePreferencesView: View {
         .onAppear {
             recent.start()
             host.refreshDiagnostics()
+            liveApply = model.objectWillChange
+                .debounce(for: .milliseconds(200), scheduler: RunLoop.main)
+                .sink { [host, model] _ in host.apply(model) }
         }
-        .onDisappear { recent.stop() }
+        .onDisappear {
+            recent.stop()
+            liveApply = nil
+        }
     }
 
     // MARK: - State dot
@@ -343,22 +352,14 @@ struct AutoPausePreferencesView: View {
 
     // MARK: - Save
 
+    /// Settings apply as you change them. The engine reads these values live,
+    /// so there is nothing to confirm and no button to remember to press.
     private var saveSection: some View {
         HStack {
-            if savedFlash {
-                Label("Saved", systemImage: "checkmark")
-                    .foregroundStyle(.green)
-                    .font(.caption)
-            }
+            Label("Changes apply automatically", systemImage: "checkmark.circle")
+                .foregroundStyle(.secondary)
+                .font(.caption)
             Spacer()
-            Button("Save & Apply") {
-                host.apply(model)
-                savedFlash = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                    savedFlash = false
-                }
-            }
-            .buttonStyle(.borderedProminent)
         }
     }
 }

@@ -116,6 +116,12 @@ final class SonarEngineHost: ObservableObject {
             SonarLog.write("relinquished: \(reason.rawValue)")
         case .skippedNotPlaying:
             lastEventText = "Skipped (Spotify not playing)"
+        case .tapReady:
+            lastEventText = "Tap active (loudness detection)"
+            SonarLog.write("tap active: waiting for signal to confirm it carries audio")
+        case .tapVerified:
+            lastEventText = "Tap verified (loudness detection on)"
+            SonarLog.write("tap verified: RMS detection is driving decisions (silence is now measured)")
         case .tapUnavailable(let reason):
             lastEventText = "Tap unavailable — poll-only"
             tapStatusText = "Tap unavailable (poll-only)"

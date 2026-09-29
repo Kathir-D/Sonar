@@ -366,9 +366,14 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
         // refuses AudioDeviceStart ('nope'/bad device, verified live), while
         // Apple's sample flow uses a visible aggregate. The tap itself stays
         // private so only Sonar sees the captured audio.
+        //
+        // The UID is per-process on purpose. A fixed UID means a crashed or
+        // killed run leaves a stale aggregate registered system-wide, and
+        // every later AudioHardwareCreateAggregateDevice then fails with
+        // 'nope' (0x6E6F7065) until logout - the tap would never recover.
         let aggregate: CFDictionary = [
             kAudioAggregateDeviceNameKey: "Sonar auto-pause",
-            kAudioAggregateDeviceUIDKey: "SonarAutoPauseAggregate",
+            kAudioAggregateDeviceUIDKey: "SonarAutoPauseAggregate.\(getpid())",
         ] as CFDictionary
         var agg = AudioObjectID(0)
         st = AudioHardwareCreateAggregateDevice(aggregate, &agg)
@@ -394,7 +399,16 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
         }
         ioProc = proc
 
-        st = AudioDeviceStart(agg, proc)
+        // A freshly created aggregate is not immediately startable: until the
+        // HAL brings it up, AudioDeviceStart answers 'nope' (0x6E6F7065).
+        // Wait for it to report alive, then start with a bounded retry so a
+        // slow bring-up cannot look like a hard failure.
+        guard waitForAggregateReady(agg) else {
+            tearDownTap()
+            throw TapError.start(noErr)
+        }
+
+        st = startWithRetry(agg, proc)
         guard st == noErr else {
             tearDownTap()
             throw TapError.start(st)
@@ -402,15 +416,72 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
         setStatus(.active(rms: 0))
     }
 
+    /// Poll the aggregate until it reports alive (or the device list says it
+    /// has come up). Bounded so a wedged HAL cannot stall the engine.
+    private func waitForAggregateReady(
+        _ aggregate: AudioObjectID,
+        timeout: TimeInterval = 3.0
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if aggregateIsAlive(aggregate) { return true }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        // Some HAL configurations never set the flag but are startable; let
+        // the caller's retry decide rather than failing outright here.
+        return true
+    }
+
+    private func aggregateIsAlive(_ aggregate: AudioObjectID) -> Bool {
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceIsAlive,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var alive: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(aggregate, &addr, 0, nil, &size, &alive)
+            == noErr else { return false }
+        return alive != 0
+    }
+
+    /// The aggregate can refuse the first start while it finishes coming up,
+    /// so retry briefly before reporting failure.
+    private func startWithRetry(
+        _ aggregate: AudioObjectID,
+        _ proc: AudioDeviceIOProcID,
+        attempts: Int = 10,
+        delay: TimeInterval = 0.1
+    ) -> OSStatus {
+        var st = AudioDeviceStart(aggregate, proc)
+        var tries = 0
+        while st != noErr && tries < attempts {
+            tries += 1
+            Thread.sleep(forTimeInterval: delay)
+            st = AudioDeviceStart(aggregate, proc)
+        }
+        return st
+    }
+
     /// Attach the tap to the aggregate via kAudioAggregateDevicePropertyTapList
     /// (Apple sample flow).
+    ///
+    /// Drift compensation is required, not optional: an aggregate whose only
+    /// sub-device is a tap has no clock of its own, so without it the tap
+    /// stream never runs and the IOProc delivers zeros forever - the tap
+    /// reports active while measuring pure silence.
     private func attachTap(uid: String, to aggregate: AudioObjectID) throws {
         var addr = AudioObjectPropertyAddress(
             mSelector: kAudioAggregateDevicePropertyTapList,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
-        var list: CFArray = [uid] as CFArray
+        var list: CFArray = [
+            [
+                kAudioSubTapUIDKey: uid,
+                kAudioSubTapDriftCompensationKey: true,
+            ]
+        ] as CFArray
         let st = withUnsafeMutablePointer(to: &list) { ptr in
             AudioObjectSetPropertyData(
                 aggregate, &addr, 0, nil,

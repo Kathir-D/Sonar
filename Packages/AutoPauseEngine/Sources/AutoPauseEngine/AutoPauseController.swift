@@ -8,6 +8,11 @@ public enum EngineEvent: Sendable, Equatable {
     case relinquished(RelinquishReason)
     case skippedNotPlaying
     case tapUnavailable(reason: String)
+    /// The tap started: loudness (RMS) detection is live, so silence is
+    /// finally distinguishable from sound.
+    case tapReady
+    /// The tap has carried real signal, so it is now trusted over poll.
+    case tapVerified
 }
 
 /// Orchestrates poll + tap detectors, fusion, and the fade adapter.
@@ -42,6 +47,16 @@ public final class AutoPauseController: @unchecked Sendable {
     private var timer: DispatchSourceTimer?
     private var tapIsUsable = true
     private var lastReconcileAt: Date?
+    /// Set once the tap has reported a non-zero RMS sample since it started.
+    ///
+    /// An aggregate containing only a tap can come up cleanly, report
+    /// "active", and then deliver nothing but zeros - no running clock, no
+    /// data. Trusting a tap in that state would mean auto-pause never fires
+    /// at all, which is worse than the poll fallback. So the tap only earns
+    /// the vote by proving it carries signal: until then poll drives
+    /// decisions, and the moment any real sound arrives the tap takes over
+    /// and silence finally becomes distinguishable from sound.
+    private var tapHasAudibleSignal = false
     /// Fusion reports `.candidate` on every tick once the streak is long
     /// enough. Emit the event only on the transition into that state so the
     /// diagnostics log shows one line per episode, not one per tick.
@@ -78,6 +93,7 @@ public final class AutoPauseController: @unchecked Sendable {
         fusion.reset()
         lastReconcileAt = nil
         candidateAnnounced = false
+        tapHasAudibleSignal = false
     }
 
     /// One engine tick. Public + synchronous for tests.
@@ -88,9 +104,27 @@ public final class AutoPauseController: @unchecked Sendable {
         // over-released and the next tick reads freed memory.
         autoreleasepool {
             guard enabled else { return }
+            // Always refresh poll: it feeds the diagnostics UI. But poll can
+            // only ask "does this process hold the audio output?", never "is
+            // it making sound" - 45s of pure digital silence reads as loud,
+            // and an app holding the device (a paused browser tab) reads as
+            // loud for as long as it holds it. So while the tap is live it is
+            // the only signal that gets a vote: it is the sole detector that
+            // measures actual loudness. Poll is the fallback for when the
+            // tap is unavailable, not a second opinion to overrule it.
             let pollSignal = poll.refresh()
             let tapSignal = tapIsUsable ? tap?.latestSignal : nil
-            let decision = fusion.evaluate(poll: pollSignal, tap: tapSignal)
+            if let rms = tapSignal?.rms, rms > 0.0001, !tapHasAudibleSignal {
+                tapHasAudibleSignal = true
+                onEvent?(.tapVerified)
+            }
+            let useTap = tapIsUsable && tapHasAudibleSignal
+            let decision: FusionDecision
+            if useTap {
+                decision = fusion.evaluate(poll: nil, tap: tapSignal)
+            } else {
+                decision = fusion.evaluate(poll: pollSignal, tap: nil)
+            }
             switch decision {
             case .candidate(let source):
                 if !candidateAnnounced {
@@ -125,8 +159,12 @@ public final class AutoPauseController: @unchecked Sendable {
         switch status {
         case .unavailable(let reason):
             tapIsUsable = false
+            tapHasAudibleSignal = false
             onEvent?(.tapUnavailable(reason: reason))
-        case .active, .starting:
+        case .active:
+            tapIsUsable = true
+            onEvent?(.tapReady)
+        case .starting:
             tapIsUsable = true
         case .idle:
             break
