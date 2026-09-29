@@ -4,7 +4,7 @@ cask "sonar" do
 
   url "https://github.com/Kathir-D/Sonar/releases/download/v#{version}/Sonar-#{version}.zip"
   name "Sonar"
-  desc "Spotify in your macOS menu bar, with hybrid auto-pause"
+  desc "Spotify in your menu bar, with hybrid auto-pause"
   homepage "https://github.com/Kathir-D/Sonar"
 
   livecheck do
