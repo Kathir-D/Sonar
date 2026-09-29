@@ -155,7 +155,19 @@ stops matching a preset, and the pane says why.
 
 ## Install
 
-Three ways, in order of how much they should be preferred.
+Three ways. All of them need **one** manual approval from Gatekeeper the first time, because Sonar
+is ad-hoc signed and un-notarized: **System Settings › Privacy & Security › Open Anyway**. That
+includes Homebrew — Homebrew sets the quarantine attribute on cask downloads deliberately (see
+`cask/quarantine.rb` in the Homebrew source). If you would rather skip the click:
+
+```sh
+brew install --no-quarantine --cask sonar
+```
+
+> **Why a personal tap rather than `homebrew/cask`?** Homebrew's policy for its official cask repo
+> requires that apps which Gatekeeper can assess pass its Gatekeeper checks, and it has been
+> deprecating casks that fail them. Their maintainers have been explicit that this does not stop a
+> developer maintaining their own tap of unsigned software — which is what this is.
 
 ### Homebrew (recommended)
 
@@ -183,10 +195,8 @@ Verify it if you like:
 shasum -a 256 Sonar-0.1.0.zip   # f0c177e9c82fdbc0b2cc8f0c46c238aa36a0ba5929f6750cfb7cd199b65f39f6
 ```
 
-`curl` does not set the `com.apple.quarantine` attribute, and Gatekeeper only engages on
-quarantined files, so this path behaves like the cask. **Downloading the same zip from a browser
-instead does set quarantine**, and macOS will then want you to approve the app once in
-**System Settings › Privacy & Security › Open Anyway**. Nothing to fix — just know it is coming.
+`curl` does not set the `com.apple.quarantine` attribute, so this path may not prompt at all — but
+don't count on it, and if macOS does ask, approve once as described above.
 
 ### Build from source
 
@@ -461,8 +471,8 @@ Stated plainly, so nobody rediscovers them as if they were new.
 
 Sonar is ad-hoc signed and un-notarized, because it has no paid Apple Developer account. Open
 **System Settings › Privacy & Security** and click **Open Anyway**, or right-click the app in
-Finder › Open. You will not normally hit this via `brew install --cask sonar`, because Homebrew's
-download is not quarantined.
+Finder › Open. This applies to `brew install --cask sonar` too — Homebrew quarantines cask
+downloads on purpose. `brew install --no-quarantine --cask sonar` skips the prompt.
 </details>
 
 <details>

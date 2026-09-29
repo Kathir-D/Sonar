@@ -5,39 +5,20 @@ Sonar 0.1.0, the first release; later releases only need the two steps in "Ship 
 
 ## You do not need a paid Apple account
 
-Notarization costs $99/year, and Sonar does not have it. The build is therefore **ad-hoc signed
-and un-notarized** — and that is a supported state, because of one measured fact:
-
-> Homebrew downloads with `curl`, which does **not** set the `com.apple.quarantine` attribute.
-> Gatekeeper only engages on a quarantined file. A curl-fetched, ad-hoc-signed Sonar installs to
-> `/Applications` and launches, and its audio tap works.
-
-Verified on this machine: fetched the zip over HTTP, installed it, launched it, and the Core Audio
-tap came up (`capture=true`, `rms` tracked) and drove a real duck in 486 ms.
-
-**So `brew install --cask sonar` is the supported install path, and it costs nothing.**
-
-### The one cost, stated plainly
-
-`spctl -a -vv` on the artifact reports `rejected`, because nothing signs it with a Developer ID.
-For anyone installing via Homebrew this is invisible. For someone who **downloads the zip in a
-browser** — which does set quarantine — macOS may require a one-time manual approval in
+Notarization costs $99/year and Sonar does not have it, so the build is **ad-hoc signed and
+un-notarized**. Every install method needs one manual approval from Gatekeeper the first time:
 **System Settings › Privacy & Security › Open Anyway**.
 
-This has *not* been tested on a clean Mac: this machine has a long approval history for
-`com.KathirD.sonar` from a session's worth of local builds, so the prompt could not be provoked
-here. Assume a first-time browser download hits it, and say so in the README rather than
-discovering it in someone's bug report.
+**This includes Homebrew.** An earlier version of this document claimed the cask install was
+unaffected, on the grounds that Homebrew downloads with `curl` and `curl` sets no quarantine
+attribute. That is wrong. Homebrew sets the attribute on cask downloads deliberately — see
+`cask/quarantine.rb` in the Homebrew source, which preserves quarantine provenance "so Gatekeeper
+still checks the upgraded app". `brew install --no-quarantine --cask sonar` skips it.
 
-If you ever pay for the membership, skip to [If you later get a Developer account](#if-you-later-get-a-developer-account).
-Nothing below needs it.
-
-**Sonar has no in-app updater.** There is no update feed, no EdDSA signing key and no appcast.
-Updates come from `brew upgrade --cask sonar` or the releases page, which is what
-[About](Sonar/Preferences/AboutPreferencesView.swift) tells the user. That is why the release
-pipeline is short enough to read in one sitting: it builds, packages, checksums, and uploads.
-
----
+Why a personal tap is the right venue: Homebrew's policy for the *official* `homebrew/cask` repo
+requires that apps which Gatekeeper can assess pass its Gatekeeper checks, and casks that fail
+have been deprecated. Their maintainers have stated plainly that this does not stop a developer
+maintaining their own tap of unsigned software.
 
 ## What is already verified
 
@@ -54,8 +35,7 @@ pipeline is short enough to read in one sitting: it builds, packages, checksums,
 
 ## What is NOT verified, and cannot be from here
 
-- **A first-time browser download on a clean Mac.** See the note at the top; it could not be
-  reproduced here.
+- **Gatekeeper on a clean Mac.** Expected to need one "Open Anyway", but not observed here.
 - **`brew install --cask sonar` end to end**, because the tap repository does not exist yet
   (step 6). The download half of it is verified.
 - `brew audit --cask --strict` — Homebrew's own audit is broken on this machine (a vendored-gem
