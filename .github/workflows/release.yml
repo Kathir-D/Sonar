@@ -41,14 +41,22 @@ jobs:
       # The keychain profile `sign-release.sh` uses has to exist on the runner
       # first; a fresh GitHub runner has no such profile, so notarization would
       # fail with "no keychain profile" even with every secret configured.
+      # `secrets` is NOT an available context in a step's `if:` - GitHub's
+      # context table allows github/needs/strategy/matrix/job/runner/env/vars/
+      # steps/inputs there, and nothing else. Referencing secrets.APPLE_...
+      # directly makes the whole file invalid: the run is created, parses no
+      # jobs, and fails as a "workflow file issue" with no log. That is what
+      # every run before this commit was doing. Read the secret through `env`
+      # instead, which *is* allowed in `if:`.
       - name: notary-credentials
-        if: ${{ secrets.APPLE_DEVELOPER_ID != '' }}
+        if: env.APPLE_DEVELOPER_ID != ''
         run: |
           xcrun notarytool store-credentials sonar-notary \
             --apple-id "$APPLE_ID" \
             --team-id "$APPLE_TEAM_ID" \
             --password "$APPLE_APP_SPECIFIC_PASSWORD"
         env:
+          APPLE_DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
