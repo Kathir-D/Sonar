@@ -3,9 +3,10 @@
   <h1>Sonar</h1>
   <p><strong>Spotify in your macOS menu bar, with hybrid auto-pause.</strong></p>
   <p>
-    <a href="#install">Install</a> ·
+    <a href="#screenshots">Screenshots</a> ·
     <a href="#features">Features</a> ·
-    <a href="#how-it-works">How it works</a> ·
+    <a href="#install">Install</a> ·
+    <a href="#auto-pause">Auto-Pause</a> ·
     <a href="#troubleshooting">Troubleshooting</a> ·
     <a href="#development">Development</a> ·
     <a href="#contributing">Contributing</a> ·
@@ -24,50 +25,80 @@
   <a href="https://github.com/Kathir-D/Sonar/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/Kathir-D/Sonar?style=social"></a>
 </p>
 
-Sonar puts the current Spotify track in your macOS menu bar with click-to-open playback controls,
-and steps out of the way when something else starts making noise: it fades the music down, pauses
-it, and fades it back in once the room goes quiet again.
+Sonar puts the current Spotify track in your macOS menu bar, and gets out of the way when something
+else starts making noise — it pauses the music, and starts it again once the room goes quiet.
 
-Detection is **hybrid** — a CoreAudio tap measures real loudness, a process poll catches anything
-the tap misses, and a fusion state machine decides when to duck. Sonar only ever resumes Spotify
-if *it* was the one that paused it.
+Deciding "is something actually making sound" is the hard part, and a process poll cannot do it: a
+paused video in a browser still holds the audio output open, so a poll sees it as loud forever and
+your music never comes back. So Sonar measures **real loudness** with a Core Audio tap, and uses
+polling only as a fallback. A fusion state machine decides when to duck, and Sonar only ever
+resumes Spotify if *it* was the one that paused it.
+
+| | measured, on a MacBook Pro, Instant preset |
+| --- | --- |
+| Time from another app making sound to Spotify pausing | **0.33 s** |
+| Time from the room going quiet to Spotify resuming | **0.32 s** |
+
+Numbers are measured from the moment sound reaches the speakers, not from a keypress, and
+`scripts/autopause-smoke.sh` re-checks them on demand.
 
 ---
 
 ## Contents
 
-- [Demo](#demo)
+- [Screenshots](#screenshots)
 - [Features](#features)
-- [Why two detectors?](#why-two-detectors)
 - [Requirements](#requirements)
 - [Install](#install)
-  - [Homebrew (planned)](#homebrew-planned)
+  - [Homebrew](#homebrew)
   - [Build from source](#build-from-source)
 - [Set up Spotify liking](#set-up-spotify-liking)
 - [Usage](#usage)
+  - [Preferences at a glance](#preferences-at-a-glance)
+- [Auto-Pause](#auto-pause)
+  - [The problem: a poll cannot measure silence](#the-problem-a-poll-cannot-measure-silence)
   - [Presets](#presets)
   - [Advanced settings](#advanced-settings)
-- [How it works](#how-it-works)
-- [Permissions](#permissions)
+  - [Which apps pause your music](#which-apps-pause-your-music)
+  - [How the decision is made](#how-the-decision-is-made)
+  - [Ownership: never fight the user](#ownership-never-fight-the-user)
+  - [Permissions](#permissions)
+  - [Measured behaviour](#measured-behaviour)
+  - [Known limitations](#known-limitations)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
+- [Project layout](#project-layout)
 - [Contributing](#contributing)
-- [Credits &amp; provenance](#credits--provenance)
+- [Credits &amp; provenance](#credits-provenance)
 - [License](#license)
 
 ---
 
-## Demo
+## Screenshots
 
-A GIF of the full cycle is still to be recorded (tracked in `TODO.md` task 9). It will show three
-beats:
+**Auto-Pause opens on its permissions**, because it cannot work without them, and the pane says so
+before it offers anything else. Each row shows a live state and a button that does the thing that
+actually helps — *Grant…* while macOS will still prompt, *Open System Settings* after it has stopped
+asking. The dot under the toggle is the engine's own state, including the loudness it is measuring
+right now.
 
-1. **Now playing** — artist and title in the menu bar; click the item for the playback panel.
-2. **Ducking** — something else starts making noise; Spotify fades out over 2 s and pauses.
-3. **Resume** — 3 s of silence later, Spotify fades back in to the volume you had set.
+<img src="docs/images/auto-pause-permissions.png" alt="The Auto-Pause pane showing both permissions granted, Auto-Pause switched on, and the tap capturing audio" width="470">
 
-Until then, the architecture diagram below and the Auto-Pause diagnostics pane in Preferences are
-the best description of the behavior.
+**When Auto-Pause is off, the rest of the pane is hidden.** No sliders, no lists, nothing to
+misread — just the toggle and what is still needed to use it.
+
+<img src="docs/images/auto-pause-off.png" alt="The Auto-Pause pane with Auto-Pause switched off: only the permissions section and the toggle remain" width="470">
+
+**The presets explain themselves**, and *Custom* is not a choice you pick — it appears when a value
+stops matching a preset, and the pane says why.
+
+<img src="docs/images/auto-pause-presets.png" alt="The preset cards: Fade, Instant and Custom, each with a one-line explanation" width="470">
+
+**The whole pane, including which apps count.**
+
+<img src="docs/images/auto-pause-pane.png" alt="The full Auto-Pause pane: permissions, enable toggle, live state, presets, and the app list with icons" width="410">
+
+[⬆ Back to top](#sonar)
 
 ---
 
@@ -109,35 +140,14 @@ the best description of the behavior.
 
 ---
 
-## Why two detectors?
-
-Each signal alone has a failure mode. Running both and fusing them removes most of them:
-
-| Signal | Needs permission | Gives you | Blind spot |
-| --- | --- | --- | --- |
-| **Process poll** (`IsRunningOutput`) | No | Which app is playing, cheaply, ~0 idle CPU | A process with an open output stream that is effectively silent still counts as loud |
-| **Core Audio tap** (RMS) | Yes (Screen & System Audio Recording) | Actual loudness, which is what makes fades feel right | Only sees processes it can tap, so a granted permission that is not delivering audio leaves it silent too |
-
-The tap is what lets Sonar fade smoothly instead of clipping, and it is the reason a quiet app
-in the background does not trigger a duck. The poll is the safety net for anything the tap
-cannot attach to — but it is not a substitute for the permission: Auto-Pause will not switch on
-without both grants, because without loudness there is no way to tell a paused video from a
-silent one.
-
-Fusion is deliberately asymmetric — see [How it works](#how-it-works).
-
-[⬆ Back to top](#sonar)
-
----
-
 ## Requirements
 
 | | |
 | --- | --- |
 | macOS | 15 Sequoia or later |
-| Spotify | Desktop app for macOS, any account tier (Premium not required) |
-| Toolchain (building) | Xcode 16+, macOS 15 SDK, Swift 6 |
-| Permissions (Auto-Pause) | Screen & System Audio Recording **and** Automation for Spotify — both, or the feature stays off |
+| Spotify | The desktop app for macOS. Any account tier — Premium is not needed |
+| Permissions (Auto-Pause only) | Screen & System Audio Recording **and** Automation for Spotify. Both, or the feature stays switched off |
+| Toolchain (only to build) | Xcode 16+, macOS 15 SDK, Swift 6 |
 
 [⬆ Back to top](#sonar)
 
@@ -145,19 +155,19 @@ Fusion is deliberately asymmetric — see [How it works](#how-it-works).
 
 ## Install
 
-> **Status: no release published yet.** `VERSION` is `0.1.0` and the release pipeline is in place,
-> but nothing has been tagged — so there is no downloadable binary and no Homebrew tap. Build
-> from source for now.
+> **Status: not released yet.** `VERSION` is `0.1.0`, nothing has been tagged, and there is no
+> signed build to download. Build from source for now — it takes about a minute and works
+> perfectly well, with one caveat about permissions below.
 
-### Homebrew (planned)
+### Homebrew
 
 ```sh
 brew install --cask sonar
 ```
 
-The cask lives at [`Casks/sonar.rb`](Casks/sonar.rb) and is filled in by
-`scripts/bump-cask.sh` once a signed release exists. Until then the file carries a placeholder
-checksum and will not install.
+The cask lives at [`Casks/sonar.rb`](Casks/sonar.rb). Its checksum is filled in by the release run
+itself, so this starts working as soon as a signed release is tagged. Until then the file carries a
+placeholder and will not install.
 
 ### Build from source
 
@@ -168,18 +178,23 @@ scripts/build-app.sh
 open dist/Sonar.app
 ```
 
-`scripts/build-app.sh` builds the Release configuration, stamps `VERSION` into the app bundle, and
-copies the result to `dist/Sonar.app`. Local builds are ad-hoc signed, so the first launch needs
-**System Settings › Privacy & Security › Open Anyway**.
+`scripts/build-app.sh` builds Release, stamps `VERSION` into the bundle, and leaves the result at
+`dist/Sonar.app`.
 
-To run from Xcode instead:
+To run it in Xcode instead:
 
 ```sh
-open SpotMenu.xcodeproj   # the Xcode project is still named after the upstream fork
+open SpotMenu.xcodeproj   # still named after the upstream fork
 ```
 
-Then build and run the `Sonar` scheme. `Sonar` is a `LSUIElement` (menu-bar only) app — there is
-no Dock icon and no main window; look for the Spotify track in the menu bar.
+Build and run the `Sonar` scheme. Sonar is an `LSUIElement` app — menu bar only, no Dock icon and
+no main window — so look for the Spotify track in the menu bar.
+
+> **One caveat for builds from source.** A local build is ad-hoc signed, and macOS ties the
+> Screen & System Audio Recording grant to a code signature. **Every rebuild therefore invalidates
+> the grant and macOS asks again.** That is expected, not a bug, and it is why the release pipeline
+> signs properly. The first launch of an ad-hoc build also needs **System Settings › Privacy &
+> Security › Open Anyway**.
 
 [⬆ Back to top](#sonar)
 
@@ -187,13 +202,12 @@ no Dock icon and no main window; look for the Spotify track in the menu bar.
 
 ## Set up Spotify liking
 
-Everything except liking works with no setup at all. To like and unlike tracks from the menu-bar
-panel, register a free Spotify app:
+Everything except liking works with no setup at all. To like and unlike from the menu-bar panel,
+register a free Spotify app:
 
 1. Go to the [Spotify developer dashboard](https://developer.spotify.com/dashboard) and create an
-   app (name it anything, e.g. `Sonar`).
-2. Add this exact Redirect URI:
-   `com.kathird.sonar://callback`
+   app. Name it anything, e.g. `Sonar`.
+2. Add this exact Redirect URI: `com.kathird.sonar://callback`
    All lowercase — OAuth redirect URIs are compared case-sensitively.
 3. Copy the **Client ID** (not the secret) into Preferences › Music Player › Spotify Client ID,
    press **Test Connection**, then **Log In to Spotify**.
@@ -208,22 +222,64 @@ A client secret is never needed or stored: Sonar uses the PKCE authorization-cod
 
 Click the menu-bar item to toggle the playback panel — artwork, transport controls, the like
 button, and a scrubber with elapsed and total time. Hovering inside the panel applies the blur and
-tint effect. The right-click menu has Refresh (`R`), Preferences (`⌘,`), and Quit (`Q`).
+tint effect. The right-click menu has Refresh (`R`), Preferences (`⌘,`) and Quit (`Q`).
 
-| Preferences pane | What it controls |
+### Preferences at a glance
+
+| Pane | What it controls |
 | --- | --- |
-| **Auto-Pause** | Enable, permissions, the two presets, fade length, *Advanced settings*, watch list vs. only-list, recent-sources finder, live state, countdowns, log path |
+| **Auto-Pause** | Permissions, the enable toggle, the two presets, fade length, *Advanced settings*, which apps count, the live app finder, engine state, countdowns, and the log path |
 | **Menu Bar** | Which text and icons to show, hide-when-paused, compact view, max width, font weights |
-| **Playback** | Hover tint, foreground color, blur and tint intensity, live preview |
+| **Playback** | Hover tint, foreground colour, blur and tint intensity, live preview |
 | **Shortcuts** | Global hotkeys for play/pause, next, previous, like, unlike |
 | **Music Player** | Spotify client ID, liking toggle, connection test |
 | **About** | Version, update checks, credits |
 
+Settings apply as you change them — there is no Save button. Auto-Pause settings persist in
+`UserDefaults` under `autopause.*`; changing which apps count rebuilds the tap, changing a timing
+does not.
+
+[⬆ Back to top](#sonar)
+
+---
+
+## Auto-Pause
+
+The whole feature, start to finish. If you want the reasoning behind any of it — including the
+four separate bugs that stopped the tap from ever delivering a single audio buffer — read
+**[docs/HOW-AUTOPAUSE-WORKS.md](docs/HOW-AUTOPAUSE-WORKS.md)**.
+
+### The problem: a poll cannot measure silence
+
+The obvious way to find out whether another app is playing something is to ask Core Audio which
+processes are holding the audio output. It needs no permission, costs nothing when idle, and it is
+wrong in the one way that matters:
+
+- A browser paused on a video **keeps the output open**. The poll sees it as loud, forever.
+- Measured on the development machine, a browser *actively playing* a video reports
+  `IsRunningOutput == 0`, while a Core Audio tap of the same system plainly hears the sound.
+- 45 seconds of pure digital silence reads as loud.
+
+So polling cannot tell a paused video from a playing one, and a duck based on it never comes back.
+
+Sonar therefore measures **actual loudness** with a Core Audio process tap: a private aggregate
+device carrying a tap of every audio process except Spotify and Sonar itself, sampled ~90 times a
+second, turned into an RMS figure. Polling is kept only as a fallback for when the tap is
+unavailable, and the pane says plainly when that happens.
+
+| Signal | Needs permission | Tells you | Blind spot |
+| --- | --- | --- | --- |
+| **Core Audio tap** (RMS) | Yes — Screen & System Audio Recording | How loud the room actually is | Only processes it can attach a tap to |
+| **Process poll** (`IsRunningOutput`) | No | Which apps are playing, cheaply, zero idle CPU | Cannot measure silence — see above |
+
+The tap is what makes *Fade* sound right and what lets a muted app stay ignored. The poll is a
+safety net, never a substitute: Auto-Pause will not switch on without both permissions, because
+without loudness there is no way to tell a paused video from a quiet one.
+
 ### Presets
 
-Auto-Pause starts from a preset, and each preset is a whole configuration — the duck behaviour
-*and* the timings that go with it — so *Instant* really is instant instead of inheriting
-*Fade*'s multi-second waits.
+Each preset is a whole configuration — the behaviour *and* the timings that go with it — so
+*Instant* really is instant rather than inheriting *Fade*'s multi-second waits.
 
 | | Fade | Instant |
 | --- | --- | --- |
@@ -231,96 +287,85 @@ Auto-Pause starts from a preset, and each preset is a whole configuration — th
 | How it sounds | Nothing is clipped, but the first and last moments of speech can slip underneath it | Nothing is clipped, but the change is abrupt |
 | Trigger delay | 1 s of sound before Sonar pauses | 0.1 s |
 | Resume delay | 3 s of quiet before Sonar resumes | 0.3 s |
-| Fade length | 2 s, one length for both directions | None — there is no fade to set |
+| Fade length | 2 s, one length for both directions | None — so the pane offers *Use a fade instead* instead of a slider that would do nothing |
 
-*Custom* is not a third choice you can pick: it appears when your values stop matching either
-preset, and the pane says so. Clicking *Fade* or *Instant* again, or *Reset to …* in
-*Advanced settings*, puts you back on a preset.
+*Custom* is not a third choice you pick. It appears when your values stop matching either preset,
+and the pane says so. Clicking a preset again, or *Reset to …* in *Advanced settings*, puts you
+back on one.
 
 ### Advanced settings
 
-Every preset has the same collapsible *Advanced settings* section. It is where the timings
-actually live, and moving any slider out of a preset's values is what switches the pane to
-*Custom*.
+Every preset has the same collapsible section. This is where the timings actually live, and moving
+any control out of a preset's values is what switches the pane to *Custom*.
 
 | Control | Range | What it does |
 | --- | --- | --- |
-| Fade length | 0–5 s, in 0.5 s steps | One length for both directions; the only Fade control. *Instant* has no fade, so the pane offers a *Use a fade instead* button instead |
+| Fade length | 0–5 s, in 0.5 s steps | One length for both directions. The only Fade control; *Instant* has no fade to set |
 | Trigger delay | 0–5 s | How long another app has to keep making sound before Sonar pauses |
 | Resume delay | 0–10 s | How long everything has to stay quiet before Sonar starts again |
-| Loudness sensitivity | *Only loud sound* → *Even a whisper* | The RMS floor for counting as audio. Dragging right picks up more; the slider is inverted because the engine compares `rms >= threshold` |
-| Which apps count | *All apps* / *Only these apps* | A read-only summary of the list below — the control itself is in *Which apps pause your music*, and the sentence under it spells out the result |
+| Loudness sensitivity | *Only loud sound* → *Even a whisper* | The RMS floor for counting as audio. Dragging right picks up more — the slider is inverted because the engine compares `rms >= threshold`, so a bigger number is a *stricter* test |
+| Which apps count | *All apps* / *Only these apps* | A read-only summary of the list below; the sentence under it spells out the result in plain English |
 
-When the values are yours rather than a preset's, *Advanced settings* also offers **Reset to
-Fade** or **Reset to Instant**.
+### Which apps pause your music
 
-The *Heard in the last 3 minutes* list underneath is the quickest way to find the bundle ID of
-whatever is making noise. Tabs are not listed separately — a browser counts as one app.
+*All apps* pauses you for anything that makes sound — a video, a call, a game. *Only these apps*
+pauses you for nothing else. Spotify itself is never included, and neither is Sonar.
 
-Settings persist in `UserDefaults` under `autopause.*`. Changing a watch-list rule restarts the
-tap; changing timing does not.
+The *Heard in the last 3 minutes* list is the quickest way to find the app that is making noise: it
+is a live scan, with real app icons and names, and one tap to add or ignore an app. Tabs are not
+listed separately — a browser counts as one app, so it is all-or-nothing per browser. The button
+label follows the current mode, so it never claims to *Watch* an app while actually adding it to
+the ignore list.
 
-[⬆ Back to top](#sonar)
-
----
-
-## How it works
+### How the decision is made
 
 ```mermaid
 flowchart LR
-    X["Other apps make audio"] -->|"RMS loudness"| T["Core Audio tap<br/>needs Screen & System Audio Recording"]
+    X["Another app makes audio"] -->|"RMS loudness"| T["Core Audio tap<br/>Screen &amp; System Audio Recording"]
     X -->|"IsRunningOutput"| P["Process poll<br/>no permission needed"]
-    T --> F["Fusion state machine<br/>100 ms tick · loud = OR · quiet = AND"]
+    T --> S["Tap smoothing<br/>is it loud right now, 0.15 s hysteresis"]
+    S --> F["Fusion state machine<br/>100 ms tick"]
     P --> F
-    F -->|"loud ≥ active duration"| D["Duck: remember pid + volume<br/>fade out · pause"]
-    D -->|"quiet ≥ quiet duration, still owned"| R["Fade in at your volume<br/>resume the same pid"]
-    D -->|"manual pause, volume change, restart, or quit"| N["Relinquish — hands off"]
+    F -->|"loud for the trigger delay"| D["Duck: remember pid + volume, then pause"]
+    D -->|"quiet for the resume delay, still owned"| R["Resume the same pid at your volume"]
+    D -->|"you acted, or Spotify changed underneath us"| N["Relinquish — hands off"]
 ```
 
-Each tick refreshes the poll, reads the latest tap sample, and runs one fusion step.
+The engine ticks 10 times a second. Each tick reads the latest loudness figure, advances the
+fusion state machine, and acts on the decision:
 
-**Fusion rules** (`Packages/AutoPauseEngine/Sources/AutoPauseEngine/FusionState.swift`)
+- **Loud** — a signal has been above the threshold for the whole trigger delay. One loud sample is
+  enough; a missing detector never blocks a duck.
+- **Quiet** — *everything* has been below the threshold for the whole resume delay. One quiet
+  sample is not enough, and a single loud blip restarts the count from zero.
+- The tap reports "is it loud right now" with a little hysteresis to ride out a dropped buffer; the
+  trigger and resume delays above it are owned by the fusion state machine, so the two do not stack
+  and make "instant" incapable of being instant.
+- While the tap is delivering buffers it is the only signal that gets a vote. It is trusted because
+  buffers are arriving, and that trust is revocable: a tap that goes quiet for a second stops being
+  believed, rather than reporting a healthy state forever.
 
-- **Loud is OR.** If *either* detector has been loud for at least the active duration, that is a
-  duck candidate. Missing one signal never blocks a duck.
-- **Quiet is AND.** Resume only requires *both* detectors quiet for at least the quiet duration.
-  Silence in one signal is not enough.
-- A single loud blip resets the quiet streak entirely; the streak restarts at the first quiet
-  sample after the blip. Gaps shorter than 750 ms inside a loud streak do not reset it.
+### Ownership: never fight the user
 
-**Ownership rules** (`Packages/AutoPauseEngine/Sources/AutoPauseEngine/SpotifyFadeAdapter.swift`)
+Sonar records the Spotify process id and your volume when it pauses, and will only ever resume
+*that* process, and only if it is the one that stopped it.
 
-Sonar records the Spotify pid and your volume at duck time, and only resumes that exact process:
-
-| Event | Result |
+| What happens | What Sonar does |
 | --- | --- |
-| Another app goes quiet, same pid, still paused by us | Fade in and resume |
-| You press pause yourself | Relinquish — Sonar stays out of the way |
-| You change the volume yourself | Relinquish, and your volume is preserved |
-| Spotify restarts, or a different pid appears | Relinquish, never touch the new process |
-| Spotify quits | Relinquish, never launch it |
-| A stale fade step is still queued | Cancelled via a generation token |
+| The room goes quiet, same process, still paused by us | Resumes, at the volume you had set |
+| You press pause yourself | Gives up ownership and stays out of the way |
+| You change the volume yourself | Gives up ownership, and leaves your volume alone |
+| Spotify restarts, or a different process appears | Gives up ownership, never touches the new one |
+| Spotify quits | Gives up ownership, never relaunches it |
+| You quit Sonar while it is holding the music | Restores it on the way out |
+| You change your audio device, or AirPods connect | Rebuilds the tap for the new device |
+| A stale fade is still queued | Cancelled by a generation token |
 
-Volume fades step every 100 ms on a serialized queue, so a fade can be interrupted and cancelled
-mid-ramp without leaving Spotify at a random volume.
+Volume fades step every 100 ms on a single serialised queue, so a fade can be interrupted and
+cancelled mid-ramp without leaving Spotify at a random volume — and so the Apple Events are never
+entered from two threads at once, which is a reliable way to crash.
 
-**Layout**
-
-| Path | Contents |
-| --- | --- |
-| `Sonar/StatusItem/` | Menu-bar item and its popover |
-| `Sonar/Playback/` | Playback panel, scrubber, Spotify auth |
-| `Sonar/Preferences/` | SwiftUI preference panes |
-| `Sonar/UI/` | Menu, popover window, status-item configuration |
-| `Sonar/Engine/` | Engine host, preferences bridge, bounded log |
-| `Packages/AutoPauseEngine/` | Standalone Swift package: detectors, fusion, fade adapter, and its test suite |
-| `scripts/` | Build, package, sign, appcast, and cask helpers |
-
-[⬆ Back to top](#sonar)
-
----
-
-## Permissions
+### Permissions
 
 Auto-Pause needs exactly two permissions, and it will not switch on without both. Preferences ›
 Auto-Pause shows both at the top of the pane with their live state, and the button next to each
@@ -351,6 +396,44 @@ log lives inside the app's container.
 
 ---
 
+### Measured behaviour
+
+Measured on a MacBook Pro running macOS 27, with another app producing audio and Spotify playing.
+The timings are taken from the moment sound actually reaches the speakers, verified with a second
+tap rather than assumed from a keypress.
+
+| | Measured | Composed of |
+| --- | --- | --- |
+| Instant: sound to paused | 0.33 s | 0.1 s trigger + ~0.03 s AppleScript round trip + fusion tick |
+| Instant: quiet to playing | 0.32 s | 0.15 s tap hysteresis + 0.3 s resume delay + ~0.03 s round trip |
+| Fade: sound to paused | ~3.3 s | 1 s trigger + 2 s fade-out + pause |
+| Fade: quiet to playing | ~3.1 s | 3 s resume delay, then a 2 s fade-in |
+| AppleScript round trip | 5–30 ms | one command, one reply |
+
+A `Spotify` player that is *not* playing is not re-probed on every tick. The engine asks at most a
+few times a second, because ten probes a second is a third of the decision budget spent asking a
+question whose answer cannot change on its own.
+
+### Known limitations
+
+Stated plainly, so nobody rediscovers them as if they were new.
+
+- **Without the audio-capture permission, detection degrades and cannot be made reliable.** The
+  poll cannot measure silence, so an app that keeps the audio output open while silent can hold the
+  music paused for a long time. A "stuck duck" timeout was considered and rejected: the legitimate
+  case is a two-hour film, and guessing wrong pauses someone's music mid-movie. Instead the pane
+  says *Process polling only*, with the consequence spelled out.
+- **A hand pause in the middle of a duck is indistinguishable from Sonar's own.** Sonar will resume
+  it when the room goes quiet, because from its side the two look identical.
+- **Force-quitting Sonar while it is holding the music** leaves Spotify paused. No code runs on a
+  force quit, so nothing can clean up. Quitting normally restores it.
+- **Auto-update needs a Developer ID signed, notarized release.** An ad-hoc build from source is
+  never signed that way, and its Sparkle feed cannot be produced.
+
+[⬆ Back to top](#sonar)
+
+---
+
 ## Troubleshooting
 
 <details>
@@ -368,35 +451,38 @@ Both permissions have to be in place first, so the toggle is disabled until they
 pane tells you which one is standing in the way: *Sonar needs Screen & System Audio Recording
 before Auto-Pause can switch on*.
 
-1. Open Preferences › Auto-Pause › **Permissions** and read the two rows. Each says *Not
-   granted* (macOS will still prompt) or *Turned off* (it will not prompt again).
-2. Press **Grant…** on the row that needs it and answer the system dialog. The system-audio
-   prompt only appears while the tap is actually being started, which is why the button restarts
-   the detector too.
-3. If a row says *Turned off*, macOS has already been told no and will not ask again — press
-   **Open System Settings** and flip it on there. The pane re-checks on its own, so come back
-   and the row turns green.
-4. *Spotify isn't running, so this is unchecked* is not a permission problem. There is nothing
-   to ask until Spotify is open; start it and the row settles by itself.
+1. Open Preferences › Auto-Pause. The two permission rows are at the very top. Each says *Not
+   granted. Sonar needs this to …* while macOS will still prompt, and *Granted. Sonar can …* once
+   it is.
+2. Press **Grant…** on the row that needs it and answer the system dialog. The system-audio prompt
+   only appears while the tap is actually being started, which is why the button restarts the
+   detector too.
+3. If **Grant…** does not produce a prompt, macOS has already been told no and will not ask again.
+   Use the button beside it to open System Settings, flip it on there, then press **Re-check** — or
+   just come back, because the pane re-checks itself whenever the app becomes active.
+4. A row saying *Spotify isn't running* is not a permission problem. There is nothing to ask until
+   Spotify is open; start it and the row settles by itself.
+
+A row can also read **Granted, but no system audio is reaching Sonar yet.** That is the one case
+where the grant exists but the capability does not — see the next entry.
 
 Note that the grant is tied to the app's code signature: a rebuild from source can invalidate it
 and send you back to System Settings for the same reason.
 </details>
 
 <details>
-<summary><strong>The state dot says "Watching by process only"</strong></summary>
+<summary><strong>The pane says "Process polling only"</strong></summary>
 
-That is the honest answer to a question the icon cannot ask: the permission is granted, but no
-system audio is reaching Sonar. Preferences › Auto-Pause › **Diagnostics** shows which detector
-is really driving the decisions — *System audio (tap)* or *Process polling only* — next to the
-live tap RMS.
+That is the honest answer to a question an icon cannot ask: the permission is granted, but no system
+audio is reaching Sonar. The state line under the toggle names the detector actually driving the
+decisions, with the live tap RMS next to it.
 
 Polling can only ask which apps hold the audio output, not whether they are making sound, so
 everything follows from that: a muted or paused app still counts as loud, and a genuinely silent
-one can hold the resume. Press **Try again** on the banner or on the permission row — it restarts
-the detector, which is also the way to make the macOS prompt reappear. If the tap still does not
-come up, the app says *Granted, but no system audio is reaching Sonar yet*, and the
-`tap unavailable:` line in the log carries the reason.
+one can hold the resume — see [Known limitations](#known-limitations). Press **Re-check** on the
+permission row to restart the detector, which is also the way to make the macOS prompt reappear.
+The `tap:` and `engine:` lines in the log carry the specific reason, and the log path is shown at
+the bottom of the Auto-Pause pane.
 </details>
 
 <details>
@@ -483,6 +569,26 @@ The lines worth reading are `engine started`, `tap verified:` / `tap unavailable
 is driving), `candidate:`, `ducked:`, `restored`, and `relinquished:` (why Sonar handed playback
 back instead of resuming it).
 </details>
+
+[⬆ Back to top](#sonar)
+
+---
+
+## Project layout
+
+| Path | Contents |
+| --- | --- |
+| `Sonar/StatusItem/` | Menu-bar item and its popover |
+| `Sonar/Playback/` | Playback panel, scrubber, Spotify auth |
+| `Sonar/Preferences/` | SwiftUI preference panes, including Auto-Pause |
+| `Sonar/UI/` | Menu, popover window, status-item configuration |
+| `Sonar/Engine/` | Engine host, permission state, bounded log |
+| `Packages/AutoPauseEngine/` | The auto-pause engine as a standalone Swift package, with its own 272-test suite |
+| `scripts/` | Build, package, sign, appcast, cask and smoke-test helpers |
+| `docs/` | Architecture notes, the audit and release triage, and [the Auto-Pause deep dive](docs/HOW-AUTOPAUSE-WORKS.md) |
+
+The engine is a separate package on purpose: it has no dependency on AppKit UI, so the decision
+logic can be tested without a running app, a real audio device, or any permission granted.
 
 [⬆ Back to top](#sonar)
 
