@@ -83,6 +83,7 @@ brew install --cask sonar
   - [Homebrew (recommended)](#homebrew-recommended)
   - [Direct download](#direct-download)
   - [Build from source](#build-from-source)
+  - [Updating](#updating)
 - [Set up Spotify liking](#set-up-spotify-liking)
 - [Usage](#usage)
   - [Preferences at a glance](#preferences-at-a-glance)
@@ -165,7 +166,8 @@ stops matching a preset, and the pane says why.
 - Preferences › Auto-Pause shows engine state, which detector is driving, tap RMS, duck and
   resume countdowns, the last decision, and the exact log path.
 - Bounded rotating log, capped at 256 KB.
-- No in-app updater. New versions arrive via `brew upgrade --cask sonar` or the releases page.
+- No in-app updater. New versions arrive via `brew upgrade --cask sonar` or the releases page —
+  see [Updating](#updating).
 
 [⬆ Back to top](#sonar)
 
@@ -186,6 +188,14 @@ stops matching a preset, and the pane says why.
 
 ## Install
 
+Three ways in. Homebrew is the only one that can also update Sonar for you.
+
+| Method | Gatekeeper prompt | How it updates |
+| --- | --- | --- |
+| [Homebrew](#homebrew-recommended) (recommended) | None | `brew upgrade --cask sonar` |
+| [Direct download](#direct-download) | Possibly, once | Download the new zip by hand |
+| [Build from source](#build-from-source) | None | `git pull`, then rebuild |
+
 ### Homebrew (recommended)
 
 ```sh
@@ -194,26 +204,11 @@ brew trust Kathir-D/tap
 brew install --cask sonar
 ```
 
-Installs to `/Applications/Sonar.app`. **No Gatekeeper approval needed** — see the note below.
+Installs to `/Applications/Sonar.app`. **No Gatekeeper approval needed.** The second note below
+explains why.
 
 `brew trust` is required: Homebrew 7 refuses to load casks from an untrusted tap, and without it
 you get `Refusing to load cask kathir-d/tap/sonar from untrusted tap`.
-
-To update later:
-
-```sh
-brew update && brew upgrade --cask sonar
-```
-
-`brew update` refreshes the tap so Homebrew can see a new release. To check first without changing
-anything, `brew outdated --cask`. Or just watch the
-[releases page](https://github.com/Kathir-D/Sonar/releases) — there is no in-app updater, so a
-release you did not come from Homebrew will not announce itself.
-
-If you installed from a zip or from source, there is nothing to run: download the new build, or
-`git pull` and re-run `scripts/build-app.sh`. Either way, **reinstalling resets the permissions** —
-macOS ties the Screen & System Audio Recording grant to a code signature, so you will be asked for
-both permissions again. That is expected.
 
 > **Why a personal tap rather than `homebrew/cask`?** Homebrew's policy for its official cask repo
 > requires that apps which Gatekeeper can assess pass its Gatekeeper checks. Sonar is ad-hoc signed
@@ -262,11 +257,54 @@ open SpotMenu.xcodeproj   # still named after the upstream fork
 Build and run the `Sonar` scheme. Sonar is an `LSUIElement` app — menu bar only, no Dock icon and
 no main window — so look for the Spotify track in the menu bar.
 
-> **One caveat that applies to every install method.** Sonar is ad-hoc signed, because the project
-> has no paid Apple Developer account, so it is not notarized. macOS ties the Screen & System
-> Audio Recording grant to a code signature, which means **every rebuild or reinstall invalidates
-> the grant and macOS asks for it again.** That is expected, not a bug, and it happens whether you
-> installed from Homebrew, a download, or source.
+### Updating
+
+Sonar has no in-app updater and never checks for new versions on its own. Preferences › About
+shows the command below and has an **Open Releases Page** button, but a new release will not
+announce itself.
+
+**Homebrew**
+
+```sh
+brew update                   # refresh the tap so Homebrew can see the new release
+brew outdated --cask          # optional: lists sonar if a newer version exists
+brew upgrade --cask sonar
+```
+
+Skip `brew update` and the upgrade quietly does nothing, because Homebrew is still reading the
+old copy of the tap. Running the upgrade when you are already current is harmless: it says so and
+exits.
+
+**Direct download**
+
+Quit Sonar, then fetch the new zip from the [releases page](https://github.com/Kathir-D/Sonar/releases)
+and swap it in. Replace `X.Y.Z` with the new version:
+
+```sh
+curl -fLO https://github.com/Kathir-D/Sonar/releases/download/vX.Y.Z/Sonar-X.Y.Z.zip
+unzip Sonar-X.Y.Z.zip
+sudo rm -rf /Applications/Sonar.app
+sudo mv Sonar.app /Applications/
+open /Applications/Sonar.app
+```
+
+The `rm` matters: `mv` will not move an app over an existing one.
+
+**Build from source**
+
+Quit Sonar first, then:
+
+```sh
+git pull
+scripts/build-app.sh
+open dist/Sonar.app
+```
+
+> **Expect the permission prompts again after every update.** Sonar is ad-hoc signed, because the
+> project has no paid Apple Developer account, so it is not notarized. macOS ties the Screen &
+> System Audio Recording grant to a code signature, which means **every rebuild or reinstall
+> invalidates the grant and macOS asks for both permissions again.** That is expected, not a bug,
+> and it happens whether you installed from Homebrew, a download, or source.
 
 [⬆ Back to top](#sonar)
 
@@ -305,7 +343,7 @@ tint effect. The right-click menu has Refresh (`R`), Preferences (`⌘,`) and Qu
 | **Playback** | Hover tint, foreground colour, blur and tint intensity, live preview |
 | **Shortcuts** | Global hotkeys for play/pause, next, previous, like, unlike |
 | **Music Player** | Spotify client ID, liking toggle, connection test |
-| **About** | Version, update checks, credits |
+| **About** | Version, how to update, a link to the releases page, credits |
 
 Settings apply as you change them — there is no Save button. Auto-Pause settings persist in
 `UserDefaults` under `autopause.*`; changing which apps count rebuilds the tap, changing a timing
