@@ -8,6 +8,11 @@ New code in this repo is MIT (c) 2026 Sonar Contributors (see LICENSE).
 - URL: https://github.com/kmikiy/SpotMenu
 - Upstream SHA at import: a114819310db63ba1a8b3f88b7c223eec8cf1873 (master, 2026-01-29, `chore: gitignore updated`)
 - Used: menu UI, prefs, Spotify controller as fork base (Spotify-only strip, UI identical).
+- App icon: `SpotMenu/Assets.xcassets/AppIcon.appiconset/` is upstream's artwork, still MIT and
+  still @kmikiy's. Sonar 0.1.2 recolours it: the disc gradient changed from upstream's
+  blue-to-purple to a radial ramp from `#5BCEFA` to `#F5A9B8`. Squircle, disc, rim and the three
+  arcs are unchanged upstream pixels. The three-arc mark is Spotify's trademark, used here
+  nominatively to identify the app's subject.
 - Imported verbatim: `SpotMenu/`, `SpotMenu.xcodeproj` + root `ISSUE_TEMPLATE.md` (required: referenced as a Resources build file by `SpotMenu.xcodeproj`; without it `xcodebuild` fails on `CpResource`). Sonar `LICENSE` (MIT 2026 Sonar Contributors) covers new code; upstream MIT text preserved below.
 - Full upstream MIT text (`LICENSE` @ a114819310db63ba1a8b3f88b7c223eec8cf1873):
 

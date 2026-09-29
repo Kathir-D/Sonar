@@ -1,7 +1,8 @@
 # Releasing Sonar
 
-Everything that has to be true before `git tag v0.1.0`, and what the tag does. Written for
-Sonar 0.1.0, the first release; later releases only need the two steps in "Ship it".
+Everything that has to be true before `git tag vX.Y.Z`, and what the tag does. Written for
+Written for Sonar 0.1.0, the first release; later releases only need the two steps in
+"Ship it". Substitute your own version number throughout.
 
 ## You do not need a paid Apple account
 
@@ -87,8 +88,8 @@ resource: never run this while anything else is playing sound on the machine.**
 ## 4. Ship it
 
 ```sh
-git tag -a v0.1.0 -m "Sonar 0.1.0"
-git push origin v0.1.0
+git tag -a vX.Y.Z -m "Sonar 0.1.0"
+git push origin vX.Y.Z
 gh run watch
 ```
 
@@ -98,7 +99,7 @@ and the cask with its real checksum filled in.
 ## 5. Verify the release as a user would
 
 ```sh
-gh release view v0.1.0                     # zip + SHA256SUMS + sonar.rb attached
+gh release view vX.Y.Z                     # zip + SHA256SUMS + sonar.rb attached
 shasum -a 256 -c dist/0.1.0/SHA256SUMS.txt  # if you kept a local copy
 
 # The real test: on a DIFFERENT Mac, or a clean user account on this one.
@@ -168,7 +169,7 @@ approval step. To take it:
 - The audit in [AUTOPAUSE-ENGINE-AUDIT.md](AUTOPAUSE-ENGINE-AUDIT.md) and the triage in
   [RELEASE-TRIAGE.md](RELEASE-TRIAGE.md) list what is still open. The known limitations in the
   README's Auto-Pause section are the user-visible ones.
-- The tap is verified on macOS 27 and one machine. Treat 0.1.0 as the release that finds out about
-  everyone else's.
+- The tap is verified on macOS 27 and one machine. Treat the first release as the one that
+  finds out about everyone else's.
 - When there is a second release, this is the point to reconsider an in-app updater. Homebrew
   covers cask installs only, and by then you will know how many people that leaves behind.

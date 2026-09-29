@@ -17,7 +17,7 @@
 <p align="center">
   <a href="https://github.com/Kathir-D/Sonar/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Kathir-D/Sonar/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/Kathir-D/Sonar/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/Kathir-D/Sonar?include_prereleases&label=release"></a>
-  <img alt="version 0.1.0 (alpha)" src="https://img.shields.io/badge/version-0.1.0%20alpha-8A2BE2">
+  <img alt="version 0.1.2" src="https://img.shields.io/badge/version-0.1.2-5BCEFA">
   <img alt="macOS 15 or later" src="https://img.shields.io/badge/macOS-15%2B-000000?logo=apple&logoColor=white">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white">
   <img alt="Spotify only" src="https://img.shields.io/badge/Spotify-only-1DB954?logo=spotify&logoColor=white">
@@ -186,8 +186,8 @@ you get `Refusing to load cask kathir-d/tap/sonar from untrusted tap`.
 ### Direct download
 
 ```sh
-curl -fLO https://github.com/Kathir-D/Sonar/releases/download/v0.1.1/Sonar-0.1.1.zip
-unzip Sonar-0.1.1.zip
+curl -fLO https://github.com/Kathir-D/Sonar/releases/download/v0.1.2/Sonar-0.1.2.zip
+unzip Sonar-0.1.2.zip
 sudo mv Sonar.app /Applications/
 open /Applications/Sonar.app
 ```
@@ -733,6 +733,12 @@ Design intent and the full task history are in [TODO.md](TODO.md).
 Sonar is a fork of [SpotMenu](https://github.com/kmikiy/SpotMenu) by [@kmikiy](https://github.com/kmikiy)
 (MIT, 2016) — the menu-bar UI, preference panes, and Spotify controller are its work, kept
 pixel-identical. The auto-pause engine is new code on top of that base.
+
+**The app icon is also SpotMenu's artwork**, taken unchanged from upstream and recoloured: the
+gradient inside the disc is now a radial ramp from `#5BCEFA` to `#F5A9B8` instead of upstream's
+blue-to-purple, but the squircle, the disc, the rim and the three arcs are the original pixels.
+The recolour is in `logo/`, and `logo/mark-white.png` is the disc alone for use on dark
+backgrounds. The Spotify mark itself is Spotify's, not SpotMenu's.
 
 | What | Source | Author | License | Upstream SHA | How used |
 | --- | --- | --- | --- | --- | --- |
