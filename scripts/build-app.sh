@@ -22,10 +22,25 @@ if [ -n "${BUILD_NUMBER:-}" ]; then
     esac
 fi
 
+# ARCHS is pinned explicitly, and ARCHS is what the release must be.
+#
+# Without a -destination, xcodebuild picks "the first of multiple matching
+# destinations" and that was arch=arm64, so the released Sonar-0.1.0.zip
+# contained a Non-fat arm64 binary: it could not run on an Intel Mac at all,
+# and nothing in the build or the workflow noticed. ONLY_ACTIVE_ARCH=YES is
+# only in the Debug config, so the cause was the implicit destination, not
+# that setting.
+#
+# A public release has to be universal. KeyboardShortcuts and the local
+# AutoPauseEngine package both build for both slices from here, so this is
+# just a matter of asking for them.
 xcodebuild -project "$ROOT/SpotMenu.xcodeproj" \
     -scheme Sonar \
     -configuration Release \
     -derivedDataPath "$ROOT/dist/DerivedData" \
+    -destination "generic/platform=macOS" \
+    ARCHS="arm64 x86_64" \
+    ONLY_ACTIVE_ARCH=NO \
     MARKETING_VERSION="$VERSION" \
     BUILD_NUMBER="${BUILD_NUMBER:-}" \
     CODE_SIGN_IDENTITY="$IDENTITY" \
@@ -65,6 +80,23 @@ elif [ -z "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST" 2>/dev
     echo "error: could not determine or stamp CFBundleVersion" >&2
     exit 1
 fi
+
+# Refuse to ship a single-architecture bundle. This is the check that would
+# have caught the arm64-only 0.1.0 release: a public build that cannot run on
+# half of the Macs people own, with a green CI run and no error anywhere.
+APP_BINARY="$ROOT/dist/Sonar.app/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$ROOT/dist/Sonar.app/Contents/Info.plist")"
+ARCHS_FOUND="$(lipo -archs "$APP_BINARY" 2>/dev/null | tr ' ' '\n' | grep -E '^(arm64|x86_64)$' | sort | tr '\n' ' ' | sed 's/ $//')"
+case "$ARCHS_FOUND" in
+    *"arm64"*"x86_64"*|*"x86_64"*"arm64"*)
+        echo "Built $(basename "$APP_BINARY") for: $ARCHS_FOUND"
+        ;;
+    *)
+        echo "error: expected a universal arm64+x86_64 binary, got: ${ARCHS_FOUND:-none}" >&2
+        echo "       A single-architecture release cannot run on every Mac. Check ARCHS" >&2
+        echo "       and -destination in scripts/build-app.sh." >&2
+        exit 1
+        ;;
+esac
 
 codesign -v "$ROOT/dist/Sonar.app"
 echo "Built $ROOT/dist/Sonar.app (version $VERSION, identity $IDENTITY)"
