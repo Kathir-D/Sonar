@@ -121,6 +121,52 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
 
     private var tapID: AudioObjectID = 0
     private var aggregateID: AudioObjectID = 0
+
+    /// Destroy leftover "Sonar auto-pause" aggregate devices from previous runs.
+    ///
+    /// The aggregate is a real device in the user's audio system. A force
+    /// quit, a crash, or a reboot mid-teardown leaves it registered, and it
+    /// never goes away on its own - during development seven accumulated and
+    /// showed up in Audio MIDI Setup. So on start, sweep anything with our
+    /// name that is not the one we are about to create.
+    public static func purgeStaleAggregates() {
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var size: UInt32 = 0
+        let system = AudioObjectID(kAudioObjectSystemObject)
+        guard AudioObjectGetPropertyDataSize(system, &addr, 0, nil, &size) == noErr
+        else { return }
+        var ids = [AudioObjectID](
+            repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
+        guard AudioObjectGetPropertyData(system, &addr, 0, nil, &size, &ids) == noErr
+        else { return }
+
+        for id in ids {
+            var nameAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioObjectPropertyName,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var name: Unmanaged<CFString>?
+            var nameSize = UInt32(MemoryLayout<CFString?>.size)
+            guard AudioObjectGetPropertyData(
+                id, &nameAddr, 0, nil, &nameSize, &name
+            ) == noErr, let value = name?.takeRetainedValue() as String? else {
+                continue
+            }
+            if value.trimmingCharacters(in: .whitespaces) == aggregateName {
+                _ = AudioHardwareDestroyAggregateDevice(id)
+            }
+        }
+    }
+
+    /// Name used for both the tap and its aggregate device, so the
+    /// startup sweep can recognise its own leftovers.
+    private static let aggregateName = "Sonar auto-pause"
+
     private var ioProc: AudioDeviceIOProcID?
     /// How many times the IOProc has actually delivered buffers. A tap can
     /// start cleanly and still deliver nothing, so this is the only honest
@@ -348,7 +394,7 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
         } else {
             throw TapError.noTargets
         }
-        description.name = "Sonar auto-pause"
+        description.name = Self.aggregateName
         description.isPrivate = true
         // Per CATapDescription.h, deviceUID/stream say which output the tap
         // captures and the tap's format matches that stream. Left unset, the
@@ -388,7 +434,7 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
         // enough either, because a rebuild within one run would collide with
         // the aggregate it is replacing.
         let aggregate: CFDictionary = [
-            kAudioAggregateDeviceNameKey: "Sonar auto-pause",
+            kAudioAggregateDeviceNameKey: Self.aggregateName,
             kAudioAggregateDeviceUIDKey: UUID().uuidString,
         ] as CFDictionary
         var agg = AudioObjectID(0)

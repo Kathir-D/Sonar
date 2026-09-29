@@ -75,6 +75,9 @@ public final class AutoPauseController: @unchecked Sendable {
     }
 
     public func start() {
+        // Clean up aggregate devices left by a previous run before making a
+        // new one, so a force quit cannot pile them up in Audio MIDI Setup.
+        TapDetector.purgeStaleAggregates()
         poll.start()
         tap?.start()
         timer?.cancel()
