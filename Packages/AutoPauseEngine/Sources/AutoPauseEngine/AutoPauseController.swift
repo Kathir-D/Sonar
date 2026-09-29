@@ -1,5 +1,33 @@
 import Foundation
 
+/// Which detector is actually driving decisions right now.
+///
+/// This is not a preference, it is a fact about what the machine can tell us:
+/// only the tap measures loudness. Poll can answer "is this process holding the
+/// audio output", never "is it making sound", so a paused video in a browser
+/// reads as loud and the resume is seconds late.
+public enum DetectorKind: String, Sendable {
+    case tap
+    case poll
+}
+
+/// Where the Spotify adapter's work runs relative to the engine's tick.
+public enum AdapterDispatch: Sendable, Equatable {
+    /// The tick calls the adapter's synchronous variants, so a test can tick and
+    /// immediately assert ownership. Deterministic, at the cost of the tick
+    /// waiting on AppleEvents.
+    case onEngineQueue
+    /// The tick hands work to the adapter's own serial queue and moves on.
+    ///
+    /// This is what production uses, and the reason is a fade: `fade()` is a
+    /// loop of AppleScript volume writes with a sleep between each, so a
+    /// nominal 2 s fade occupied the engine queue for two whole seconds during
+    /// which no loud/quiet streak could be evaluated at all - the resume could
+    /// not even be *noticed*, let alone acted on. Every command still runs on
+    /// one queue, so `NSAppleScript` is never entered from two threads at once.
+    case onAdapterQueue
+}
+
 /// Engine-level diagnostics for the prefs pane and log.
 public enum EngineEvent: Sendable, Equatable {
     case candidate(source: String)
@@ -31,6 +59,9 @@ public final class AutoPauseController: @unchecked Sendable {
     public var adapter: SpotifyFadeAdapter
     public var enabled = true
     public var tickInterval: TimeInterval = 0.1
+    /// Where adapter work runs. Tests use `.onEngineQueue`; the app sets
+    /// `.onAdapterQueue` so a fade cannot stall detection.
+    public var adapterDispatch: AdapterDispatch = .onEngineQueue
     /// Minimum spacing between ownership reconciliations.
     ///
     /// Reconcile costs an AppleEvent round trip (or several), and it used to
@@ -43,24 +74,39 @@ public final class AutoPauseController: @unchecked Sendable {
     /// Called on an arbitrary queue for diagnostics / logging.
     public var onEvent: (@Sendable (EngineEvent) -> Void)?
 
+    /// Low-rate engine telemetry. The decisions are only as good as the loop
+    /// that makes them, so the loop itself has to be observable: a tick rate
+    /// that has quietly collapsed is indistinguishable from "detection is
+    /// slow" from the outside.
+    public var onDiagnostic: (@Sendable (String) -> Void)?
+
     private let queue = DispatchQueue(label: "sonar.autopause-engine")
     private var timer: DispatchSourceTimer?
     private var tapIsUsable = true
     private var lastReconcileAt: Date?
-    /// Set once the tap has reported a non-zero RMS sample since it started.
+    /// Set once the tap's IOProc has delivered a buffer since it was built.
     ///
-    /// An aggregate containing only a tap can come up cleanly, report
-    /// "active", and then deliver nothing but zeros - no running clock, no
-    /// data. Trusting a tap in that state would mean auto-pause never fires
-    /// at all, which is worse than the poll fallback. So the tap only earns
-    /// the vote by proving it carries signal: until then poll drives
-    /// decisions, and the moment any real sound arrives the tap takes over
-    /// and silence finally becomes distinguishable from sound.
+    /// An aggregate containing only a tap can come up cleanly, report "active",
+    /// and then deliver nothing at all (that is exactly what a mis-built
+    /// aggregate does: zero streams, no callbacks, no error). Trusting a tap in
+    /// that state means loudness detection silently never fires, which is worse
+    /// than the poll fallback, so the tap only earns the vote by proving it
+    /// carries buffers. Poll drives decisions until then and is the permanent
+    /// fallback when the tap is unavailable.
     private var tapHasAudibleSignal = false
+    private var _drivingDetector: DetectorKind = .poll
     /// Fusion reports `.candidate` on every tick once the streak is long
     /// enough. Emit the event only on the transition into that state so the
     /// diagnostics log shows one line per episode, not one per tick.
     private var candidateAnnounced = false
+    /// Tick-rate telemetry state (engine-queue confined).
+    private var tickCounter = 0
+    private var lastTickReport = Date()
+
+    /// Which detector the last tick actually used. `.tap` only while the tap
+    /// is receiving buffers; otherwise poll-only, which the UI must say out
+    /// loud because it cannot tell silence from sound.
+    public var drivingDetector: DetectorKind { _drivingDetector }
 
     public init(
         poll: any RefreshingDetector = PollDetector(),
@@ -111,22 +157,44 @@ public final class AutoPauseController: @unchecked Sendable {
             // only ask "does this process hold the audio output?", never "is
             // it making sound" - 45s of pure digital silence reads as loud,
             // and an app holding the device (a paused browser tab) reads as
-            // loud for as long as it holds it. So while the tap is live it is
-            // the only signal that gets a vote: it is the sole detector that
-            // measures actual loudness. Poll is the fallback for when the
-            // tap is unavailable, not a second opinion to overrule it.
+            // loud for as long as it holds it. Measured on macOS 27: a browser
+            // playing a video reports "not running output" while the tap
+            // clearly sees the sound. So while the tap is live it is the only
+            // signal that gets a vote, and poll is the fallback rather than a
+            // second opinion to overrule it.
             let pollSignal = poll.refresh()
-            let tapSignal = tapIsUsable ? tap?.latestSignal : nil
-            if let rms = tapSignal?.rms, rms > 0.0001, !tapHasAudibleSignal {
+            // `isCapturing`, not "the tap exists": a tap that never delivers
+            // buffers measures nothing, and trusting it would mean never
+            // pausing at all.
+            let tapIsLive = tapIsUsable && (tap?.isCapturing ?? false)
+            if tapIsLive, !tapHasAudibleSignal {
                 tapHasAudibleSignal = true
                 onEvent?(.tapVerified)
+            } else if !tapIsLive {
+                tapHasAudibleSignal = false
             }
-            let useTap = tapIsUsable && tapHasAudibleSignal
+            _drivingDetector = tapIsLive ? .tap : .poll
+            let tapSignal = tapIsLive ? tap?.latestSignal : nil
             let decision: FusionDecision
-            if useTap {
+            if tapIsLive {
                 decision = fusion.evaluate(poll: nil, tap: tapSignal)
             } else {
                 decision = fusion.evaluate(poll: pollSignal, tap: nil)
+            }
+            tickCounter += 1
+            let now = Date()
+            if now.timeIntervalSince(lastTickReport) > 5 {
+                let elapsed = now.timeIntervalSince(lastTickReport)
+                onDiagnostic?(
+                    "tick: \(String(format: "%.1f", Double(tickCounter) / elapsed)) Hz "
+                        + "detector=\(_drivingDetector.rawValue) "
+                        + "mode=\(adapter.mode.rawValue) tap=\(String(format: "%.4f", tap?.lastRMS ?? 0)) "
+                        + "poll=\(pollSignal.isActive ? "loud" : "quiet") decision=\(decision) "
+                        + "active=\(String(format: "%.1f", fusion.activeDuration))s "
+                        + "quiet=\(String(format: "%.1f", fusion.quietDuration))s owned=\(adapter.isOwned)"
+                )
+                lastTickReport = now
+                tickCounter = 0
             }
             switch decision {
             case .candidate(let source):
@@ -134,12 +202,22 @@ public final class AutoPauseController: @unchecked Sendable {
                     candidateAnnounced = true
                     onEvent?(.candidate(source: source))
                 }
-                adapter.duckSync(source: source)
+                switch adapterDispatch {
+                case .onEngineQueue: adapter.duckSync(source: source)
+                case .onAdapterQueue: adapter.duck(source: source)
+                }
             case .quiet:
                 candidateAnnounced = false
-                adapter.restoreSync()
+                switch adapterDispatch {
+                case .onEngineQueue: adapter.restoreSync()
+                case .onAdapterQueue: adapter.restore()
+                }
             case .hold:
-                if shouldReconcile() { adapter.reconcileSync() }
+                guard shouldReconcile() else { return }
+                switch adapterDispatch {
+                case .onEngineQueue: adapter.reconcileSync()
+                case .onAdapterQueue: adapter.reconcile()
+                }
             }
         }
     }

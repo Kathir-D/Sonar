@@ -70,23 +70,51 @@ public enum AutoPausePreset: String, Sendable, CaseIterable, Identifiable {
         }
     }
 
+    /// RMS at or above which this preset considers the room loud.
+    ///
+    /// Instant uses a lower threshold than Fade on purpose: its whole promise is
+    /// that it reacts before a video has properly started, and a fade can
+    /// afford to wait for the sound to be unambiguous.
+    public var threshold: Float {
+        switch self {
+        case .fade: return 0.02
+        case .instant: return 0.01
+        }
+    }
+
     /// True when the supplied settings are (within float tolerance) exactly
     /// what this preset configures. Drives the "Custom" state in the UI.
+    ///
+    /// Every field a preset owns participates, including the threshold: the UI
+    /// derives "Custom" from this, so leaving one field out would keep labelling
+    /// hand-tuned settings as a preset.
+    ///
+    /// `threshold` has no default on purpose. A default equal to one preset's
+    /// value silently answers for every receiver, which made
+    /// `AutoPausePreset.instant.matches(...)` permanently false (its threshold
+    /// is 0.01, the default was 0.02) and meant "Instant" could never be
+    /// reported as selected no matter what the user picked.
     public func matches(
         mode: DuckMode,
         activeDuration: TimeInterval,
         quietDuration: TimeInterval,
         fadeOutDuration: TimeInterval,
-        fadeInDuration: TimeInterval
+        fadeInDuration: TimeInterval,
+        threshold: Float
     ) -> Bool {
         mode == self.mode
             && Self.near(activeDuration, self.activeDuration)
             && Self.near(quietDuration, self.quietDuration)
             && Self.near(fadeOutDuration, self.fadeOutDuration)
             && Self.near(fadeInDuration, self.fadeInDuration)
+            && Self.near(Float(threshold), self.threshold)
     }
 
     private static func near(_ a: TimeInterval, _ b: TimeInterval) -> Bool {
         abs(a - b) < 0.001
+    }
+
+    private static func near(_ a: Float, _ b: Float) -> Bool {
+        abs(a - b) < 0.0001
     }
 }

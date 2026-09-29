@@ -24,13 +24,21 @@ final class SonarEngineHost: ObservableObject {
     @Published private(set) var pollActive = false
     @Published private(set) var loudCountdown: TimeInterval?
     @Published private(set) var quietCountdown: TimeInterval?
+    /// Which detector the engine is actually using. `.poll` means Sonar cannot
+    /// tell silence from sound, so a paused video can hold the resume for
+    /// seconds — the UI has to say that out loud rather than looking healthy.
+    @Published private(set) var drivingDetector: DetectorKind = .poll
 
-    /// True only when the tap is genuinely capturing. Everything else -
-    /// unavailable, still starting, or no tap object - means detection is
-    /// running on process polling, which cannot tell silence from sound.
+    /// True only when the tap is genuinely capturing audio. Not "the tap
+    /// object exists" and not "the status says active": a mis-built aggregate
+    /// comes up clean and then delivers nothing, and treating that as working
+    /// is what made this feature look enabled while it did nothing.
     var tapIsOperational: Bool {
-        if case .active = controller.tap?.status { return true }
-        return false
+        guard let tap = controller.tap else { return false }
+        return tap.isCapturing && {
+            if case .active = tap.status { return true }
+            return false
+        }()
     }
 
     private var lastRulesFingerprint = ""
@@ -40,10 +48,25 @@ final class SonarEngineHost: ObservableObject {
         controller.onEvent = { [weak self] event in
             DispatchQueue.main.async { self?.handle(event) }
         }
+        // One-off build facts (the stream format the HAL settled on, an
+        // aggregate that never came alive) belong in the log next to the
+        // duck/restore timeline, not just in a transient status string.
+        controller.tap?.onDiagnostic = { message in
+            SonarLog.write("tap: \(message)")
+        }
+        controller.adapter.onDiagnostic = { message in
+            SonarLog.write("spotify: \(message)")
+        }
+        controller.onDiagnostic = { message in
+            SonarLog.write("engine: \(message)")
+        }
     }
 
     /// Start the engine with the current prefs (called once at launch).
     func start(with prefs: AutoPausePreferencesModel) {
+        // A fade is 20 AppleScript writes with sleeps; run it on the adapter's
+        // queue so the engine's 10 Hz loop keeps evaluating streaks throughout.
+        controller.adapterDispatch = .onAdapterQueue
         lastRulesFingerprint = prefs.rulesFingerprint
         apply(prefs, forceTapRebuild: true)
         controller.start()
@@ -64,12 +87,30 @@ final class SonarEngineHost: ObservableObject {
         var tapConfig = controller.tap?.config ?? TapConfig()
         tapConfig.threshold = Float(prefs.threshold)
         tapConfig.filter = prefs.sourceFilter
+        // The tap reports "is it loud right now"; fusion owns how long it has
+        // to stay that way. Leaving the tap's own dwell at its 1 s default
+        // meant the two stacked and the "Instant" preset still took over a
+        // second to react, because the tap never reported itself active in
+        // time for the 0.1 s fusion streak to matter.
+        tapConfig.activeDuration = 0
+        // Just enough hysteresis to ride out a dropped buffer or a momentary
+        // dip, not so much that it doubles the resume latency on top of
+        // `quietDuration`.
+        tapConfig.gapTolerance = 0.15
         if forceTapRebuild || fingerprint != lastRulesFingerprint {
             lastRulesFingerprint = fingerprint
-            controller.tap?.stop()
-            controller.tap?.config = tapConfig
-            controller.tap?.start()
-            SonarLog.write("tap restarted (rules changed)")
+            if controller.tap?.isRunning == true {
+                controller.tap?.stop()
+                controller.tap?.config = tapConfig
+                controller.tap?.start()
+                SonarLog.write("tap restarted (rules changed)")
+            } else {
+                // Not running yet: hand the rules over and let `start()` build.
+                // Starting here raced the engine's own start-up sweep, which
+                // destroyed the aggregate this had just created - the tap came
+                // up "active" and then delivered nothing at all.
+                controller.tap?.config = tapConfig
+            }
         } else {
             controller.tap?.config = tapConfig
         }
@@ -125,10 +166,10 @@ final class SonarEngineHost: ObservableObject {
         case .skippedNotPlaying:
             lastEventText = "Skipped (Spotify not playing)"
         case .tapReady:
-            lastEventText = "Tap active (loudness detection)"
-            SonarLog.write("tap active: waiting for signal to confirm it carries audio")
+            lastEventText = "Tap starting (waiting for buffers)"
+            SonarLog.write("tap ready: waiting for buffers to confirm it carries audio")
         case .tapVerified:
-            lastEventText = "Tap verified (loudness detection on)"
+            lastEventText = "Tap capturing (loudness detection)"
             SonarLog.write("tap verified: RMS detection is driving decisions (silence is now measured)")
         case .tapUnavailable(let reason):
             lastEventText = "Tap unavailable — poll-only"
@@ -139,27 +180,36 @@ final class SonarEngineHost: ObservableObject {
     }
 
     private func updateUIState() {
+        drivingDetector = controller.drivingDetector
         if controller.adapter.isOwned {
             uiState = .ducked
             return
         }
-        if let tap = controller.tap {
-            switch tap.status {
-            case .active:
-                tapStatusText = String(format: "Tap active (RMS %.3f)", tap.lastRMS)
-                uiState = .listening
-            case .starting:
-                tapStatusText = "Tap starting…"
-                uiState = .listening
-            case .unavailable:
-                tapStatusText = "Tap unavailable (poll-only)"
-                uiState = .tapUnavailable
-            case .idle:
-                tapStatusText = "Tap idle"
-                uiState = pollActive ? .listening : .idle
-            }
-        } else {
+        guard let tap = controller.tap else {
             tapStatusText = "Tap off (poll-only)"
+            uiState = pollActive ? .listening : .idle
+            return
+        }
+        switch tap.status {
+        case .active:
+            if tap.isCapturing {
+                tapStatusText = String(format: "Tap capturing (RMS %.3f)", tap.lastRMS)
+                uiState = .listening
+            } else {
+                // Started but starved: the buffers that prove it works have not
+                // arrived. Reporting "active" here is what made this look
+                // enabled while it measured nothing.
+                tapStatusText = "Tap started, no audio (poll-only)"
+                uiState = .tapUnavailable
+            }
+        case .starting:
+            tapStatusText = "Tap starting…"
+            uiState = .listening
+        case .unavailable(let reason):
+            tapStatusText = "Tap unavailable (poll-only): \(reason)"
+            uiState = .tapUnavailable
+        case .idle:
+            tapStatusText = "Tap idle"
             uiState = pollActive ? .listening : .idle
         }
     }
