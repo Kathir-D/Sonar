@@ -43,6 +43,10 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
     public var fadeStepInterval: TimeInterval = 0.1
     /// Re-read delay after play/pause commands.
     public var rereadDelay: TimeInterval = 0.2
+    /// How long to keep refusing to re-probe after finding Spotify not playing.
+    /// Long enough to cover a burst of engine ticks, short enough that starting
+    /// playback is noticed promptly.
+    public var skipProbeBackoff: TimeInterval = 0.4
 
     private let control: any SpotifyControl
     private let queue = DispatchQueue(label: "sonar.spotify-fade")
@@ -56,9 +60,37 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
     /// is set Spotify is still *playing* by design (a fade takes time), so
     /// reconciliation must not read that as "the user resumed by hand".
     private var _duckInProgress = false
+    /// When Spotify was last found not playing, so repeated duck ticks do not
+    /// each pay for an AppleEvent round trip.
+    private var lastSkipProbeAt: Date?
+    /// When we last took ownership by pausing, so a restore that arrives
+    /// before Spotify's own state has flipped is not mistaken for the user
+    /// pressing play.
+    private var duckedAt: Date?
+    /// True while the volume we are responsible for is being restored, so a
+    /// reconcile landing mid-fade-in does not read our own `play` as the user
+    /// having resumed by hand.
+    private var _restoreInProgress = false
+
+    private var restoreInProgress: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return _restoreInProgress
+    }
+
+    private func setRestoreInProgress(_ value: Bool) {
+        lock.lock()
+        _restoreInProgress = value
+        lock.unlock()
+    }
 
     /// Called on an arbitrary queue for diagnostics.
     public var onEvent: (@Sendable (AdapterEvent) -> Void)?
+
+    /// One-off timing facts, so the gap between "we decided" and "Spotify
+    /// actually did it" can be attributed instead of guessed at. Only fires on
+    /// state changes, never per tick.
+    public var onDiagnostic: (@Sendable (String) -> Void)?
 
     public init(
         control: (any SpotifyControl)? = nil,
@@ -137,7 +169,25 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
         _ownedPID = pid
         _ownedVolume = volume
         _duckedVolume = nil
+        lastSkipProbeAt = nil
+        duckedAt = Date()
         lock.unlock()
+    }
+
+    /// pid of the running Spotify, with a brief retry.
+    ///
+    /// One empty read from `NSRunningApplication` is not proof the player quit:
+    /// the running-application list is a LaunchServices cache and it does come
+    /// back empty for a moment during app-state churn. Believing a single miss
+    /// meant relinquishing ownership on a live player, which left Spotify paused
+    /// with nobody left to resume it - the worst possible outcome for a feature
+    /// whose entire job is to start the music again.
+    private func liveSpotifyPID(retries: Int = 3, delay: TimeInterval = 0.12) -> pid_t? {
+        for attempt in 0...retries {
+            if let pid = control.spotifyPID() { return pid }
+            if attempt < retries { Thread.sleep(forTimeInterval: delay) }
+        }
+        return nil
     }
 
     private func setDuckedVolume(_ value: Int?) {
@@ -163,14 +213,27 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
         lock.lock()
         _ownedPID = nil
         _duckedVolume = nil
+        lastSkipProbeAt = nil
+        duckedAt = nil
         lock.unlock()
         onEvent?(.relinquished(reason))
         return reason
     }
 
     private func duckImpl(source: String, generation: UInt64) {
+        let duckStartedAt = Date()
         if isOwned { return } // already ducked; ticks keep calling duck()
-        guard let pid = control.spotifyPID() else { return } // Quit / not running
+        // Do not re-probe Spotify on every tick. The engine calls this at 10 Hz
+        // for as long as another app is loud, and one AppleEvent round trip
+        // costs ~300 ms, so the ticks were spending nearly all their time
+        // asking Spotify whether it was playing. Worse, it stretched the tick
+        // so far that the engine could not notice the sound stopping, and the
+        // resume came seconds late. A player that is not playing does not
+        // start playing on its own, so a short backoff is safe.
+        if let lastSkip = lastSkipProbeAt, Date().timeIntervalSince(lastSkip) < skipProbeBackoff {
+            return
+        }
+        guard let pid = liveSpotifyPID(retries: 1) else { return } // Quit / not running
         // One AppleEvent instead of two: player state plus the volume we may
         // need to restore. A round trip costs ~300 ms here, so this alone is
         // the difference between "instant" and "noticeably late".
@@ -178,9 +241,16 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
         guard probe.state == .playing else {
             // Paused/stopped/unknown: user (or Spotify) owns the state.
             // Never take ownership -> later restore() can never resume.
+            lock.lock()
+            lastSkipProbeAt = Date()
+            lock.unlock()
             onEvent?(.skippedNotPlaying)
             return
         }
+        lock.lock()
+        lastSkipProbeAt = nil
+        lock.unlock()
+        let probedAt = Date()
         takeOwnership(pid: pid, volume: probe.volume)
         setDuckInProgress(true)
         defer { setDuckInProgress(false) }
@@ -196,10 +266,17 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
                 setDuckedVolume(control.volume())
             }
         case .instant:
-            // Instant mode never touches the volume, so there is no value to
-            // re-read afterwards: pause and let the command settle only.
+            // Instant mode never *writes* the volume, but it still has to
+            // remember what it was. Without a recorded value the adapter cannot
+            // tell "the user moved the slider while we were ducked" from "we own
+            // the volume", so an interrupt would write the pre-duck volume back
+            // over whatever the user had chosen. The user's 42 becomes 70.
+            setDuckedVolume(probe.volume)
+            onDiagnostic?("duck: probe took \(Self.ms(since: duckStartedAt))ms, sending pause")
             control.pause()
+            onDiagnostic?("duck: pause command returned in \(Self.ms(since: probedAt))ms")
             settle()
+            onDiagnostic?("duck: complete in \(Self.ms(since: duckStartedAt))ms")
         case .muteOnly:
             setVolumeSync(0, generation: generation)
             if generation == currentGeneration() {
@@ -211,7 +288,7 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
     private func restoreImpl(generation: UInt64) {
         let owned = snapshot()
         guard let ownedPID = owned.pid else { return } // not owned: nothing to do
-        guard let pid = control.spotifyPID() else {
+        guard let pid = liveSpotifyPID() else {
             relinquish(reason: .playerGone)
             return
         }
@@ -219,8 +296,28 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
             relinquish(reason: .pidChanged) // restart: new instance owns itself
             return
         }
-        let probe = control.stateAndVolume()
+        var probe = control.stateAndVolume()
+        if probe.state == .playing, Date().timeIntervalSince(duckedAt ?? .distantPast) < 1.5 {
+            // We paused Spotify moments ago and it still reports "playing".
+            // That is Spotify's own state transition lagging behind the command,
+            // not the user pressing play - and treating it as a manual resume
+            // silently ends the duck, leaving the music paused for good. Give
+            // the state a moment to catch up before believing it.
+            Thread.sleep(forTimeInterval: 0.2)
+            probe = control.stateAndVolume()
+        }
         switch probe.state {
+        case .playing where mode == .muteOnly:
+            // We muted; Spotify was never paused, so "playing" is expected.
+            // Hand the volume back and report a completed cycle.
+            restoreVolumeIfUntouched(ownedVolume: owned.volume, duckedVolume: owned.ducked)
+            lock.lock()
+            _ownedPID = nil
+            _duckedVolume = nil
+            duckedAt = nil
+            lock.unlock()
+            onEvent?(.restored)
+            return
         case .playing:
             // User resumed manually (or it never paused): restore our volume
             // duck if untouched, never call play, release ownership.
@@ -242,13 +339,33 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
         }
         switch mode {
         case .fadeAndPause:
+            setRestoreInProgress(true)
+            defer { setRestoreInProgress(false) }
             control.play()
             reread()
             guard generation == currentGeneration() else { return }
             fade(to: owned.volume ?? 100, over: fadeInDuration, generation: generation)
+        case .muteOnly:
+            // Mute-only never paused anything, so "playing" here is our own
+            // state rather than the user jumping in. Restore the volume and
+            // report a completed cycle; calling it a manual resume told the
+            // user they had done something they had not.
+            setRestoreInProgress(true)
+            defer { setRestoreInProgress(false) }
+            restoreVolumeIfUntouched(ownedVolume: owned.volume, duckedVolume: owned.ducked)
+            lock.lock()
+            _ownedPID = nil
+            _duckedVolume = nil
+            duckedAt = nil
+            lock.unlock()
+            onEvent?(.restored)
+            return
         case .instant:
             // As in duck: no volume to reconcile, so skip the extra round trip.
+            let startedAt = Date()
+            onDiagnostic?("restore: sending play")
             control.play()
+            onDiagnostic?("restore: play command returned in \(Self.ms(since: startedAt))ms")
             settle()
         case .muteOnly:
             setVolumeSync(owned.volume ?? 100, generation: generation)
@@ -256,6 +373,7 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
         lock.lock()
         _ownedPID = nil
         _duckedVolume = nil
+        duckedAt = nil
         lock.unlock()
         onEvent?(.restored)
     }
@@ -263,20 +381,31 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
     private func reconcileImpl() {
         let owned = snapshot()
         guard let ownedPID = owned.pid else { return }
-        guard let pid = control.spotifyPID(), pid == ownedPID else {
-            relinquish(reason: control.spotifyPID() == nil ? .playerGone : .pidChanged)
+        guard let pid = liveSpotifyPID(retries: 1) else {
+            relinquish(reason: .playerGone)
+            return
+        }
+        guard pid == ownedPID else {
+            relinquish(reason: .pidChanged) // restart: new instance owns itself
             return
         }
         // One round trip instead of two. Mid-fade Spotify is still playing
-        // because *we* have not paused it yet, so that must not count as a
-        // manual resume.
+        // because *we* have not paused it yet, and mid-restore because *we*
+        // just called play, so in both cases "playing" is our own state and not
+        // the user acting. Mute-only never pauses at all, so for that mode
+        // "playing" carries no information either - and getting it wrong made
+        // the adapter fight itself, handing the volume back in the middle of
+        // its own duck, which is the loud blare the mode exists to prevent.
         let (state, volume) = control.stateAndVolume()
-        if state == .playing && !duckInProgress {
+        let ourOwnChange = duckInProgress || restoreInProgress
+        if state == .playing, !ourOwnChange, mode != .muteOnly {
             restoreVolumeIfUntouched(ownedVolume: owned.volume, duckedVolume: owned.ducked)
             relinquish(reason: .manuallyResumed)
             return
         }
-        if duckInProgress { return }
+        if ourOwnChange { return }
+        // The volume check is independent of the state check, and in mute-only
+        // it is the only way to notice the user intervening at all.
         if let current = volume, let ducked = owned.ducked, current != ducked {
             relinquish(reason: .volumeChangedByUser)
         }
@@ -309,6 +438,10 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
             setVolumeSync(Int(round(Double(start) + (Double(target) - Double(start)) * t)), generation: generation)
             Thread.sleep(forTimeInterval: fadeStepInterval)
         }
+    }
+
+    private static func ms(since start: Date) -> Int {
+        Int(Date().timeIntervalSince(start) * 1000)
     }
 
     private func reread() {

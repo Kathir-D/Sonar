@@ -28,16 +28,23 @@ public protocol SpotifyControl: Sendable {
     func pause()
     /// pid of the running Spotify app, nil when not running.
     func spotifyPID() -> pid_t?
+
+    /// Player state and volume in one go.
+    ///
+    /// A protocol *requirement*, not just an extension convenience, and that
+    /// distinction is the whole point. Members of a protocol extension are
+    /// statically dispatched through an existential, so with this living in the
+    /// extension every `control.stateAndVolume()` in the adapter ran the
+    /// two-read default and the AppleScript implementation's one-round-trip
+    /// version was unreachable - two AppleEvents per duck and per resume
+    /// instead of one, which is hundreds of milliseconds on the path the
+    /// "instant" mode is named after. The default stays here for fakes.
+    func stateAndVolume() -> (state: SpotifyPlayerState?, volume: Int?)
 }
 
 public extension SpotifyControl {
     static var spotifyBundleID: String { "com.spotify.client" }
 
-    /// Player state and volume in one go.
-    ///
-    /// The default performs two reads so test fakes need no changes; the
-    /// AppleScript implementation overrides it with a single round trip,
-    /// which is what keeps the engine's serial queue responsive.
     func stateAndVolume() -> (state: SpotifyPlayerState?, volume: Int?) {
         (playerState(), volume())
     }
