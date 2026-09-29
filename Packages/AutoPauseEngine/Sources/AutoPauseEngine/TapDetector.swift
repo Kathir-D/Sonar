@@ -1,22 +1,37 @@
-// Clean-room implementation from Apple documentation only — no FlowSound code:
+// Clean-room implementation from Apple documentation only - no FlowSound code:
 // - https://developer.apple.com/documentation/CoreAudio/capturing-system-audio-with-core-audio-taps
 // - https://developer.apple.com/documentation/coreaudio/catapdescription
 // - CoreAudio SDK headers (AudioHardwareTapping.h, CATapDescription.h)
 //
-// Design (documented flow): CATapDescription scoped by process object IDs
-// (bundle IDs resolved to object IDs first, because CATapDescription.bundleIDs
-// requires macOS 26 and Sonar targets macOS 15) -> AudioHardwareCreateProcessTap
-// -> aggregate device (name + UID) with the tap attached via
-// kAudioAggregateDevicePropertyTapList -> IO proc on the aggregate -> RMS per
-// audio block. If tap creation/start fails (e.g. Audio Capture not granted),
-// the detector reports .unavailable and the engine degrades to poll-only.
+// Design: CATapDescription scoped by process object IDs (bundle IDs are
+// resolved to object IDs first, because CATapDescription.bundleIDs needs
+// macOS 26 and Sonar targets macOS 15) -> AudioHardwareCreateProcessTap ->
+// a PRIVATE aggregate device that carries the tap from the moment it is
+// created -> an IO proc on the aggregate -> RMS per audio block.
 //
-// Live-test notes (2026-09-28, macOS 26.5 SDK): tap creation, UID readback,
-// attach, and IO-proc creation verified working; HAL logs show tap IOContexts
-// registering. AudioDeviceStart currently returns 'nope' (bad device) on this
-// machine for process-scoped taps until Audio Capture consent is granted; the
-// global tap starts. Re-verify live RMS via task-8 diagnostics after granting
-// consent (System Settings may prompt on first start from Sonar.app).
+// Two things about that are not obvious and were both learned the hard way on
+// 2026-09-28 (macOS 27.0, SDK 27.0). Full account in
+// docs/HOW-AUTOPAUSE-WORKS.md; the short version:
+//
+// 1. The tap list must be supplied to AudioHardwareCreateAggregateDevice at
+//    CREATION, as an array of {kAudioSubTapUIDKey, kAudioSubTapDriftCompensationKey}
+//    dictionaries, and the aggregate must be marked private. An aggregate
+//    created with only a name and UID - with the tap attached afterwards via
+//    kAudioAggregateDevicePropertyTapList - has kAudioDevicePropertyStreams == 0,
+//    exposes no input stream, and AudioDeviceStart answers 'nope' (0x6E6F7065).
+//    It looks healthy and never delivers a buffer. Private also keeps it out
+//    of Audio MIDI Setup and lets coreaudiod reap it when the process exits.
+//
+// 2. The IO proc needs its OWN queue. AudioDeviceCreateIOProcIDWithBlock
+//    dispatches the callback to the queue it is given, so registering it on
+//    the queue that builds the tap deadlocks: the build waits for buffers
+//    while blocking the delivery of them, and can only ever time out.
+//
+// Verified live after the above: ~90 buffers/s, 48 kHz float32 stereo
+// interleaved, tracking real loudness (rms 0.03-0.33, peak 0.75 with a browser
+// playing audio). If buffers do not arrive the detector reports .unavailable
+// with the reason, and the engine falls back to process polling - which cannot
+// distinguish silence from sound, and the pane says so.
 // New Sonar code, MIT (c) 2026 Sonar Contributors.
 
 import AppKit
@@ -210,7 +225,6 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
     private let lock = NSLock()
     private var _latest = AudioSignal(isActive: false, rms: 0)
     private var _status: TapStatus = .idle
-    private var _isCapturing = false
     private var _format: TapAudioFormat?
     private var _lastPeak: Float = 0
     private var smoother: TapSmoother
@@ -232,20 +246,29 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
     /// concurrently on another thread would match the device that had *just*
     /// been created, tear it out from under a running IOProc, and leave the
     /// tap silently starved with a start that can no longer be stopped.
-    public static func purgeStaleAggregates() {
+    /// Returns each leftover device it destroyed, so the caller can report it.
+    /// Sweeping by name is inherently a little dangerous - it is how the
+    /// detector used to destroy its own live aggregate - so a sweep says what
+    /// it removed rather than doing it silently.
+    /// A leftover aggregate the start-up sweep destroyed, and the result.
+    public typealias SweptAggregate = (id: AudioObjectID, status: OSStatus)
+
+    @discardableResult
+    public static func purgeStaleAggregates() -> [SweptAggregate] {
         var addr = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDevices,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
+        var swept: [SweptAggregate] = []
         var size: UInt32 = 0
         let system = AudioObjectID(kAudioObjectSystemObject)
         guard AudioObjectGetPropertyDataSize(system, &addr, 0, nil, &size) == noErr
-        else { return }
+        else { return swept }
         var ids = [AudioObjectID](
             repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
         guard AudioObjectGetPropertyData(system, &addr, 0, nil, &size, &ids) == noErr
-        else { return }
+        else { return swept }
 
         for id in ids {
             var nameAddr = AudioObjectPropertyAddress(
@@ -262,8 +285,10 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
             }
             guard value.trimmingCharacters(in: .whitespaces) == aggregateName else { continue }
             guard !isPrivateAggregate(id) else { continue }
-            _ = AudioHardwareDestroyAggregateDevice(id)
+            let status = AudioHardwareDestroyAggregateDevice(id)
+            swept.append((id: id, status: status))
         }
+        return swept
     }
 
     /// `private` flag from the aggregate's composition dictionary. There is no
@@ -1129,7 +1154,6 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
         lastBufferNanos = 0
         callbackLock.unlock()
         lock.lock()
-        _isCapturing = false
         _format = nil
         _lastPeak = 0
         lock.unlock()
@@ -1200,8 +1224,11 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
     }
 
     private func markCapturing(peak: Float) {
+        // Deliberately does NOT store a sticky "we are capturing" flag: the
+        // public `isCapturing` derives the answer from how recently a buffer
+        // arrived, because a flag set once stays true after the tap goes
+        // silent - which is how a dead tap keeps winning the engine's vote.
         lock.lock()
-        _isCapturing = true
         _lastPeak = max(_lastPeak, peak)
         lock.unlock()
     }

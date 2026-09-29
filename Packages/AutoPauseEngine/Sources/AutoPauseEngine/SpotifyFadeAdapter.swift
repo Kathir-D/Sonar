@@ -351,19 +351,21 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
         let duckStartedAt = Date()
         if isOwned { return } // already ducked; ticks keep calling duck()
         // Do not re-probe Spotify on every tick. The engine calls this at 10 Hz
-        // for as long as another app is loud, and one AppleEvent round trip
-        // costs ~300 ms, so the ticks were spending nearly all their time
-        // asking Spotify whether it was playing. Worse, it stretched the tick
-        // so far that the engine could not notice the sound stopping, and the
-        // resume came seconds late. A player that is not playing does not
-        // start playing on its own, so a short backoff is safe.
+        // for as long as another app is loud, and even a fast AppleEvent round
+        // trip (5-30 ms measured, not the ~300 ms an `osascript` process spawn
+        // costs - that figure was in a comment here for months and was simply
+        // the wrong number) is a third of the tick budget spent asking Spotify
+        // whether it is playing. Worse, the ticks were stretched enough that
+        // the engine could not notice the sound stopping, so the resume came
+        // seconds late. A player that is not playing does not start playing on
+        // its own, so a short backoff is safe.
         if let lastSkip = lastSkipProbeAt, Date().timeIntervalSince(lastSkip) < skipProbeBackoff {
             return
         }
         guard let pid = liveSpotifyPID(retries: 1) else { return } // Quit / not running
         // One AppleEvent instead of two: player state plus the volume we may
-        // need to restore. A round trip costs ~300 ms here, so this alone is
-        // the difference between "instant" and "noticeably late".
+        // need to restore. Worth having because it halves the round trips on
+        // the path the "instant" mode is named after.
         let probe = control.stateAndVolume()
         guard probe.state == .playing else {
             // Paused/stopped/unknown: user (or Spotify) owns the state.

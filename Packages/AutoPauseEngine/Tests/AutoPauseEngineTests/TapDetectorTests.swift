@@ -139,7 +139,13 @@ private func freshTap() -> TapDetector {
     // the status the engine's fallback logic switches on.
     let tap = freshTap()
     #expect(tap.status == .idle)
-    tap.start()
+    // The stop half is asserted without ever starting the detector. `start()`
+    // builds a real process tap and a real aggregate device in the HAL, which
+    // is a thing a unit test suite has no business doing: on a machine without
+    // the audio-capture permission the start path can wedge inside
+    // `AudioDeviceStop`, and CI runners have no permission and no audio
+    // device worth touching. The live path is covered by the hardware-gated
+    // tests at the bottom of this file and by scripts/autopause-smoke.sh.
     tap.stop()
     #expect(tap.status == .idle)
 }

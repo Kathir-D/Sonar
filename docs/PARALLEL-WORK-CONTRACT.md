@@ -23,6 +23,13 @@ scripts/*.sh (existing)                                    <- OWNER: agent-e2e
 README.md                                                  <- OWNER: agent-e2e
 ```
 
+> **Superseded in part.** This file was written before the tap was made to
+> deliver audio. The line describing the aggregate device below is WRONG and is
+> kept only so the mistake is recognisable: the tap list must be supplied to
+> `AudioHardwareCreateAggregateDevice` **at creation** as `{kAudioSubTapUIDKey,
+> kAudioSubTapDriftCompensationKey}` dictionaries, and the aggregate must be
+> private. See `docs/HOW-AUTOPAUSE-WORKS.md`.
+
 ## Verified hardware/OS facts (do not re-litigate)
 
 - Host: macOS 27.0 (26A428), SDK `MacOSX27.0.sdk` inside `/Applications/Xcode.app`.
