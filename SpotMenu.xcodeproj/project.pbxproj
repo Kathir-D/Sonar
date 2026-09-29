@@ -176,7 +176,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\ngit_hash=$(git rev-parse --short HEAD)\n\n  if [ -z \"$git_hash\" ]; then\n      echo \"warning: Unable to get git hash\"\n      exit 0\n  fi\n\n  /usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $git_hash\" \"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\n\n  echo \"Build number set to: $git_hash\"\n";
+			shellScript = "# CFBundleVersion must be an INCREASING INTEGER.\n#\n# Sparkle decides whether an update is newer by comparing build numbers, and\n# this used to stamp the git short hash into the plist - which is not a\n# number, so every update check silently meant nothing. A release shipped with\n# a hash there can never be updated.\n#\n# Prefer an explicit build number (CI passes its run number). Otherwise use the\n# commit count, which is an integer and only ever increases.\n#\n# This phase runs after the Info.plist is generated, so it wins over whatever\n# CURRENT_PROJECT_VERSION was set to.\nbuild_number=\"${BUILD_NUMBER}\"\nif ! printf '%s' \"$build_number\" | grep -Eq '^[0-9]+$'; then\n    build_number=\"$(git rev-list --count HEAD 2>/dev/null || true)\"\nfi\nif ! printf '%s' \"$build_number\" | grep -Eq '^[0-9]+$'; then\n    echo \"warning: no numeric build number available; leaving CFBundleVersion as built\"\n    exit 0\nfi\n/usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $build_number\" \"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\necho \"Build number set to: $build_number\"";
 		};
 /* End PBXShellScriptBuildPhase section */
 

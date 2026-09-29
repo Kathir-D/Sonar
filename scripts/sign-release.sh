@@ -41,8 +41,13 @@ xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
 
 echo "== staple =="
 xcrun stapler staple "$APP"
-ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
+# The zip is rewritten here, so the checksum package-release.sh wrote above now
+# describes a file that does not exist. Recompute it, or the published
+# SHA256SUMS.txt fails for every user who checks it - which is exactly the
+# person trying to verify the download.
+COPYFILE_DISABLE=1 ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
 xcrun stapler staple "$ZIP" || true
+(cd "$(dirname "$ZIP")" && shasum -a 256 "$(basename "$ZIP")" > SHA256SUMS.txt)
 
 echo "== verify =="
 spctl -a -vv "$APP"
