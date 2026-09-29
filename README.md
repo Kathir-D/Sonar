@@ -155,48 +155,47 @@ stops matching a preset, and the pane says why.
 
 ## Install
 
-Three ways. All of them need **one** manual approval from Gatekeeper the first time, because Sonar
-is ad-hoc signed and un-notarized: **System Settings › Privacy & Security › Open Anyway**. That
-includes Homebrew — Homebrew sets the quarantine attribute on cask downloads deliberately (see
-`cask/quarantine.rb` in the Homebrew source). If you would rather skip the click:
-
-```sh
-brew install --no-quarantine --cask sonar
-```
-
-> **Why a personal tap rather than `homebrew/cask`?** Homebrew's policy for its official cask repo
-> requires that apps which Gatekeeper can assess pass its Gatekeeper checks, and it has been
-> deprecating casks that fail them. Their maintainers have been explicit that this does not stop a
-> developer maintaining their own tap of unsigned software — which is what this is.
-
 ### Homebrew (recommended)
 
 ```sh
 brew tap Kathir-D/tap
+brew trust Kathir-D/tap
 brew install --cask sonar
 ```
 
-Installs to `/Applications/Sonar.app`. Update with `brew upgrade --cask sonar`. The cask lives in
-the [`homebrew-tap`](https://github.com/Kathir-D/homebrew-tap) repository and is published by the
-release workflow, with the release's real SHA-256 already substituted in.
+Installs to `/Applications/Sonar.app` and updates with `brew upgrade --cask sonar`. **No Gatekeeper
+approval needed** — see the note below.
+
+`brew trust` is required: Homebrew 7 refuses to load casks from an untrusted tap, and without it
+you get `Refusing to load cask kathir-d/tap/sonar from untrusted tap`.
+
+> **Why a personal tap rather than `homebrew/cask`?** Homebrew's policy for its official cask repo
+> requires that apps which Gatekeeper can assess pass its Gatekeeper checks. Sonar is ad-hoc signed
+> and un-notarized, so `spctl` reports it as `rejected` and it would be ineligible. Their
+> maintainers have been explicit that this does not stop a developer maintaining their own tap of
+> unsigned software — which is what this is.
+
+> **How the cask avoids the Gatekeeper prompt.** Sonar is ad-hoc signed, and Homebrew deliberately
+> sets the quarantine attribute on cask downloads (see `cask/quarantine.rb` in the Homebrew
+> source), which would normally make every user approve the app by hand in System Settings. The
+> cask clears the attribute in a `postflight` block, which runs *after* Homebrew has verified the
+> SHA-256 — so the checksum is the integrity gate, not the quarantine flag. Homebrew's own
+> `--no-quarantine` flag, which used to do this, was removed in 7.x and has no cask DSL
+> replacement. If a future Homebrew drops the block, installs still succeed and you would get the
+> ordinary one-time approval back.
 
 ### Direct download
 
 ```sh
-curl -fLO https://github.com/Kathir-D/Sonar/releases/download/v0.1.0/Sonar-0.1.0.zip
-unzip Sonar-0.1.0.zip
+curl -fLO https://github.com/Kathir-D/Sonar/releases/download/v0.1.1/Sonar-0.1.1.zip
+unzip Sonar-0.1.1.zip
 sudo mv Sonar.app /Applications/
 open /Applications/Sonar.app
 ```
 
-Verify it if you like:
-
-```sh
-shasum -a 256 Sonar-0.1.0.zip   # f0c177e9c82fdbc0b2cc8f0c46c238aa36a0ba5929f6750cfb7cd199b65f39f6
-```
-
-`curl` does not set the `com.apple.quarantine` attribute, so this path may not prompt at all — but
-don't count on it, and if macOS does ask, approve once as described above.
+`curl` does not set the quarantine attribute, so this may not prompt at all. If macOS does ask,
+approve once in **System Settings › Privacy & Security › Open Anyway** — that step is unavoidable
+for a hand-downloaded, un-notarized app. A **browser** download always sets quarantine.
 
 ### Build from source
 
@@ -220,8 +219,8 @@ no main window — so look for the Spotify track in the menu bar.
 > **One caveat that applies to every install method.** Sonar is ad-hoc signed, because the project
 > has no paid Apple Developer account, so it is not notarized. macOS ties the Screen & System
 > Audio Recording grant to a code signature, which means **every rebuild or reinstall invalidates
-> the grant and macOS asks again.** That is expected, not a bug. If macOS blocks a launch, approve
-> it in System Settings › Privacy & Security.
+> the grant and macOS asks for it again.** That is expected, not a bug, and it happens whether you
+> installed from Homebrew, a download, or source.
 
 [⬆ Back to top](#sonar)
 
