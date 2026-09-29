@@ -11,6 +11,15 @@ final class FakeSpotifyControl: SpotifyControl, @unchecked Sendable {
     var calls: [String] = []
     var volumesSet: [Int] = []
     var rereadHook: (() -> Void)?
+    /// Fired from inside `setVolume`, i.e. from the middle of a fade. This is
+    /// the only hook that can land while a fade is in flight, which is what
+    /// the generation-token tests need.
+    var volumeSetHook: ((Int) -> Void)?
+    /// Models an unreadable `sound volume` (an AppleScript timeout, or a
+    /// Spotify that answered with something unparseable). `nil` is not the same
+    /// as "the volume is 0", and the adapter has to tell them apart: a nil read
+    /// is a transport problem, never a user moving the slider.
+    var volumeUnreadable = false
 
     func playerState() -> SpotifyPlayerState? {
         calls.append("state")
@@ -20,7 +29,7 @@ final class FakeSpotifyControl: SpotifyControl, @unchecked Sendable {
 
     func volume() -> Int? {
         calls.append("getVolume")
-        return currentVolume
+        return volumeUnreadable ? nil : currentVolume
     }
 
     func setVolume(_ value: Int) {
@@ -28,6 +37,7 @@ final class FakeSpotifyControl: SpotifyControl, @unchecked Sendable {
         calls.append("setVolume(\(v))")
         volumesSet.append(v)
         currentVolume = v
+        volumeSetHook?(v)
     }
 
     func play() {
