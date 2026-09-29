@@ -74,7 +74,15 @@ if [ -n "$expected_build_number" ]; then
         echo "CFBundleVersion was $actual_build_number, expected $expected_build_number" >&2
         echo "(Xcode skipped copying the bundle into Products; re-stamping the copy)" >&2
         /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $expected_build_number" "$PLIST"
-        codesign --force --sign "$IDENTITY" "$ROOT/dist/Sonar.app"
+        # The entitlements must be passed again here. `codesign --force` replaces
+        # the signature wholesale, so without this the re-signed bundle carries
+        # none at all - no sandbox, no Apple Events to Spotify, nothing - even
+        # though xcodebuild had just signed it correctly a moment earlier.
+        # Sonar.entitlements has no build-variable placeholders left in it, so it
+        # can be handed to codesign as-is.
+        codesign --force --sign "$IDENTITY" \
+            --entitlements "$ROOT/Sonar/Sonar.entitlements" \
+            "$ROOT/dist/Sonar.app"
     fi
 elif [ -z "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST" 2>/dev/null || echo '')" ]; then
     echo "error: could not determine or stamp CFBundleVersion" >&2
