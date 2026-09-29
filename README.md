@@ -588,7 +588,7 @@ back instead of resuming it).
 | `Sonar/Engine/` | Engine host, permission state, bounded log |
 | `Packages/AutoPauseEngine/` | The auto-pause engine as a standalone Swift package, with its own 272-test suite |
 | `scripts/` | Build, package, sign, appcast, cask and smoke-test helpers |
-| `docs/` | Architecture notes, the audit and release triage, and [the Auto-Pause deep dive](docs/HOW-AUTOPAUSE-WORKS.md) |
+| `docs/` | [The Auto-Pause deep dive](docs/HOW-AUTOPAUSE-WORKS.md), the [release runbook](docs/RELEASING.md), the engine audit and its release triage |
 
 The engine is a separate package on purpose: it has no dependency on AppKit UI, so the decision
 logic can be tested without a running app, a real audio device, or any permission granted.
