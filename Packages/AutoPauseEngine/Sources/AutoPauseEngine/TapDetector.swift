@@ -322,13 +322,35 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
     /// rebuild must not start before it finishes or the two would race over the
     /// same device ids.
     private var tearingDown = false
+    /// When the in-flight teardown started, so a *wedged* one can be given up
+    /// on. See `teardownWatchdog`.
+    private var teardownStartedAt: Date?
     private var rebuildPending = false
+    /// True while a build is in progress, so the engine can tell "the tap is
+    /// between builds and knows nothing" apart from "the tap is not available".
+    /// The two look identical from outside - `isCapturing` is false either way -
+    /// and conflating them is what let poll decide mid-rebuild.
+    private var _isRebuilding = false
     /// Backoff for rebuilding a tap that could not be built, so a user who has
     /// just granted the permission in System Settings gets a working tap
     /// without having to restart Sonar. TCC flips live, but a tap that failed
     /// once stays failed until something asks it to try again.
     private var retryDelay: TimeInterval = 5
     private var retryScheduled = false
+    /// How many times the *timer* has retried a build. Bounded, because each
+    /// attempt is expensive - a full process enumeration, an aggregate, up to 3 s
+    /// waiting for it to come alive and up to 2 s waiting for buffers - and
+    /// because retrying forever turns a permanently denied permission into a
+    /// multi-second blocking cycle every 30 s for as long as Sonar is open.
+    ///
+    /// Sized so the bound is not something a user can hit by accident: the delay
+    /// saturates at 30 s, so this is a bit over an hour of trying. That is far
+    /// longer than "opened System Settings, granted it, came back", and the
+    /// retries are the *only* thing that ever triggers the system prompt, so
+    /// they cannot simply be given up on earlier. Waking and changing the rules
+    /// both rebuild regardless, and a successful build resets the count.
+    private var retryAttempts = 0
+    private static let retryAttemptLimit = 120
     /// Capture-health reporting state (tap-queue confined).
     private var wasCapturing = false
     private var lastHealthReport = Date.distantPast
@@ -466,6 +488,25 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
     /// reported within a second instead of at the next app restart.
     private static let captureFreshness: TimeInterval = 1.0
 
+    /// True while a build is in progress.
+    ///
+    /// `isCapturing` is false for the whole of a rebuild, and so is the status
+    /// worth trusting - but the two mean different things to the engine. "Not
+    /// capturing" during a rebuild is a gap in what we know; "not capturing"
+    /// after a failed build is a fact about the machine, and the engine has to
+    /// hand the vote to poll in the second case and hold its hands in the first.
+    public var isRebuilding: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return _isRebuilding
+    }
+
+    private func setRebuilding(_ value: Bool) {
+        lock.lock()
+        _isRebuilding = value
+        lock.unlock()
+    }
+
     /// The sample format read back from the aggregate's input stream, or nil
     /// when the tap has not been built or the format is unsupported.
     public var format: TapAudioFormat? {
@@ -526,9 +567,32 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
         // Never build on top of a device that is still being torn down: the
         // ids can be recycled by the HAL and the two would interleave.
         if tearingDown {
-            rebuildPending = true
-            onDiagnostic?("rebuild deferred (\(reason)): teardown in flight")
-            return
+            // ...unless the teardown is never going to finish. `tearDownTap`
+            // runs its HAL calls on a queue nobody waits on, precisely because
+            // `AudioDeviceStop` on a tap that never produced buffers wedges
+            // inside coreaudiod (observed live, macOS 27). The price of that
+            // decision is that the completion which clears `tearingDown` may
+            // never run - and the only thing that consumed `rebuildPending` was
+            // that same completion, so a suspend during a wedged stop left the
+            // tap dead for the rest of the session with no log line at all.
+            // Auto-Pause then silently ran poll-only, which cannot tell silence
+            // from sound, so the resume could stop happening entirely.
+            //
+            // A leaked aggregate is a far smaller problem than a permanently
+            // dead detector, and it is private, so coreaudiod reaps it at exit.
+            if Date().timeIntervalSince(teardownStartedAt ?? .distantPast)
+                > Self.teardownWatchdog
+            {
+                onDiagnostic?(
+                    "teardown still in flight after \(Int(Self.teardownWatchdog))s (\(reason)): building anyway"
+                )
+                tearingDown = false
+                teardownStartedAt = nil
+            } else {
+                rebuildPending = true
+                onDiagnostic?("rebuild deferred (\(reason)): teardown in flight")
+                return
+            }
         }
         let wanted = resolveTapTargets()
         if !force, wanted == lastTargets {
@@ -549,9 +613,12 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
         lastBuildAt = now
         lastTargets = wanted
         tearDownTap()
+        setRebuilding(true)
+        defer { setRebuilding(false) }
         do {
             try buildTap(targets: wanted)
             retryDelay = 5
+            retryAttempts = 0
         } catch {
             onDiagnostic?("build failed (\(reason)): \(error)")
             setStatus(.unavailable(reason: "\(reason): \(error)"))
@@ -563,12 +630,29 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
         }
     }
 
+    /// How long a teardown may stay in flight before a rebuild stops waiting for
+    /// it. Comfortably longer than a teardown that is going to finish - three
+    /// HAL calls, none of them blocking on the app - and short enough that a
+    /// wedged one costs one build attempt instead of the rest of the session.
+    private static let teardownWatchdog: TimeInterval = 5.0
+
     /// Retry a tap that could not be built, with backoff. Without this, granting
     /// the permission in System Settings changes nothing until Sonar is
     /// relaunched, because the one build that failed is the only one that ever
     /// runs.
     private func scheduleRetry() {
         guard running, !retryScheduled else { return }
+        guard retryAttempts < Self.retryAttemptLimit else {
+            // Not a permanent decision: waking, a rules change, and a
+            // successful build all reset the count, so this only stops an idle
+            // app from rebuilding a tap it cannot have.
+            onDiagnostic?(
+                "tap unavailable; giving up on automatic retries for now "
+                    + "(sleep/wake or a rules change will try again)"
+            )
+            return
+        }
+        retryAttempts += 1
         retryScheduled = true
         let delay = retryDelay
         retryDelay = min(30, retryDelay * 1.5)
@@ -591,6 +675,13 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
         /// Non-empty == mixdown of exactly these processes.
         var includedObjectIDs: [AudioObjectID]
         var exclusive: Bool
+        /// The output this tap is bound to. Part of the identity on purpose: the
+        /// tap's `deviceUID` comes from the *current* default output, so
+        /// without this a device change resolved to the same process list, hit
+        /// the "targets unchanged" early return, and left the tap measuring an
+        /// output that no longer existed. Plugging in AirPods therefore turned
+        /// loudness detection off with nothing in the log and nothing on screen.
+        var outputDeviceUID: String?
         /// What the exclusions actually resolved to, for the log. A tap that
         /// excludes something it should not goes completely silent rather than
         /// failing, so this has to be visible.
@@ -598,6 +689,7 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
     }
 
     private func resolveTapTargets() -> TapTargets {
+        let outputDeviceUID = defaultOutputDeviceUID()
         let objectIDs = processObjectIDsByBundle()
         switch config.filter.mode {
         case .allExcept:
@@ -636,6 +728,7 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
                 excludedObjectIDs: excluded.sorted(),
                 includedObjectIDs: [],
                 exclusive: true,
+                outputDeviceUID: outputDeviceUID,
                 excludedSummary: notes.joined(separator: ", ")
             )
         case .watchedOnly:
@@ -651,6 +744,7 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
                 excludedObjectIDs: [],
                 includedObjectIDs: included.sorted(),
                 exclusive: false,
+                outputDeviceUID: outputDeviceUID,
                 excludedSummary: "watched-only: \(included.count) process(es)"
             )
         }
@@ -695,6 +789,11 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
         case create(OSStatus)
         case uidMissing
         case aggregate(OSStatus)
+        /// There is no default output to tap. Distinct from everything else,
+        /// because unlike a permissions problem it is transient and self-healing:
+        /// the next rebuild, which a device notification will trigger, finds the
+        /// device the user just plugged in.
+        case noOutputDevice
         /// The aggregate came up but has no input stream, so the IOProc would
         /// never be called. Reported separately from a permissions problem
         /// because no amount of toggling System Settings fixes it.
@@ -713,6 +812,8 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
             case .create(let st): return "AudioHardwareCreateProcessTap failed (\(st))"
             case .uidMissing: return "tap UID unreadable"
             case .aggregate(let st): return "aggregate creation failed (\(st))"
+            case .noOutputDevice:
+                return "no default output device to tap (mute one in System Settings > Sound, or connect an output)"
             case .noInputStream(let bits):
                 return "aggregate has no input stream (streams=0x\(String(bits, radix: 16)))"
             case .unsupportedFormat(let detail):
@@ -778,10 +879,19 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
         // captures and the tap's format matches that stream. Left unset, the
         // tap starts and delivers buffers, but they are silence on this OS.
         // Bind it to the current default output, stream 0.
-        if let deviceUID = defaultOutputDeviceUID() {
-            description.deviceUID = deviceUID
-            description.stream = 0
+        //
+        // Which is exactly why this is a hard error rather than a fallback: a
+        // tap with no device UID is the *worst* outcome available, because it
+        // comes up healthy. Buffers arrive, so `isCapturing` is true and the
+        // engine hands it every decision, and every sample is zero - so the tap
+        // wins every vote and reports the room permanently quiet, and Auto-Pause
+        // silently does nothing with no error anywhere. Refusing to build turns
+        // that into a visible reason, and the next rebuild tries again.
+        guard let deviceUID = defaultOutputDeviceUID() else {
+            throw TapError.noOutputDevice
         }
+        description.deviceUID = deviceUID
+        description.stream = 0
         // Required: per CATapDescription.h, `exclusive` means "tap all
         // processes except the processes listed". A global-except tap with
         // isExclusive=false refuses AudioDeviceStart ('nope'); verified live.
@@ -877,8 +987,14 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
         // that is running but starved is indistinguishable from a working tap
         // if you trust the status alone, and that is exactly the lie the
         // engine used to show in the UI.
+        //
+        // Read the format *before* the confirmation: it tears the tap down on
+        // failure, which clears the format, so asking afterwards always
+        // answered "unknown" on the one error message whose whole job is to
+        // name the format it was measuring.
+        let measuredFormat = format
         guard confirmAudioIsFlowing() else {
-            let detail = format.map(Self.describe) ?? "unknown"
+            let detail = measuredFormat.map(Self.describe) ?? "unknown"
             throw TapError.starved(detail)
         }
         setStatus(.active(rms: 0))
@@ -1026,11 +1142,13 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
         // permanently - no rebuild, no recovery, ever. Serialised on its own
         // queue and never waited on, so the tap can come back.
         tearingDown = true
+        teardownStartedAt = Date()
         teardownQueue.async { [weak self] in
             Self.releaseHAL(proc: proc, aggregate: aggregate, tap: tap)
             guard let self else { return }
             self.queue.async {
                 self.tearingDown = false
+                self.teardownStartedAt = nil
                 if self.rebuildPending {
                     self.rebuildPending = false
                     self.rebuildIfNeeded(reason: "after teardown")
@@ -1041,10 +1159,17 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
 
     // MARK: - Metering
 
-    /// Runs on a realtime thread: only a counter, the RMS, and the peak, then
+    /// Runs on the IOProc's own queue: a counter, the RMS, and the peak, then
     /// straight back out. Everything else (smoothing, publishing) hops to the
-    /// detector's own queue, because a realtime callback must not take a lock
-    /// another thread can hold.
+    /// detector's own queue, because that work must not happen here.
+    ///
+    /// Two locks are still taken per buffer - `callbackLock` and the field
+    /// `lock` behind `format` - and every holder of either keeps them for
+    /// microseconds, so in practice they never contend. It is still the one
+    /// thing here that could glitch the output the tap aggregate is clocking,
+    /// if a future change ever grows to hold `lock` across something slow. A
+    /// lock-free path (an atomic buffer counter plus a format snapshot taken at
+    /// build time) is the real fix and is deliberately not attempted here.
     private func handleAudioBlock(_ inInputData: UnsafePointer<AudioBufferList>) {
         let format = self.format
         callbackLock.lock()

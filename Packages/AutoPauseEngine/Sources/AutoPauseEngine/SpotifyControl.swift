@@ -154,9 +154,21 @@ public final class AppleScriptSpotifyControl: SpotifyControl, @unchecked Sendabl
         NSRunningApplication.runningApplications(withBundleIdentifier: Self.spotifyBundleID).first?.processIdentifier
     }
 
+    /// Run one script and return its string result, or nil if it failed.
+    ///
+    /// `executeAndReturnError` hands back the *error* descriptor when a command
+    /// fails, and `.stringValue` on that is the error message: a non-nil string.
+    /// Nothing downstream can cope with that. `stateAndVolume` splits the reply
+    /// on "/", so an Automation failure ("execution error: Spotify got an
+    /// error: Application isn't running (-600)") yields a bogus state and a
+    /// bogus volume, and a bogus volume is exactly what the "did the user move
+    /// the slider" comparison reads. A revoked Automation grant must read as
+    /// "cannot talk to Spotify", not as a half-parsed error string.
     private func run(_ source: String) -> String? {
         var error: NSDictionary?
         guard let script = NSAppleScript(source: source) else { return nil }
-        return script.executeAndReturnError(&error).stringValue
+        let result = script.executeAndReturnError(&error)
+        guard error == nil else { return nil }
+        return result.stringValue
     }
 }

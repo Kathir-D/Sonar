@@ -113,9 +113,20 @@ public final class PollDetector: RefreshingDetector, @unchecked Sendable {
 
     public func start() {
         tracker.start()
-        // Seed synchronously so the very first tick has a real reading rather
-        // than a false "all quiet" (which could resume Spotify spuriously).
-        performScan()
+        // Seed through `refresh()`, so the first scan lands on the scan queue.
+        //
+        // It used to run synchronously here, and `start()` is called by
+        // `AutoPauseController.start()` - which the app calls on the main thread
+        // at launch, before it has finished launching. The scan this comment
+        // above already warns can take *seconds* with a browser's worth of audio
+        // helpers, so the synchronous seed was a multi-second frozen menu bar
+        // on the user's first launch after login.
+        //
+        // The seed exists so the first tick does not read a false "all quiet",
+        // and losing it costs at most one tick: fusion sees quiet, which resolves
+        // to `restore()`, and the adapter ignores a restore it never earned
+        // because nothing was ducked yet.
+        refresh()
     }
 
     public func stop() {

@@ -165,6 +165,73 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
     public func restoreSync() { restoreImpl(generation: currentGeneration()) }
     public func reconcileSync() { reconcileImpl() }
 
+    /// Undo a duck as the app quits.
+    ///
+    /// The process is on its way out, so this is the normal restore with every
+    /// nicety traded away: no re-read, no settle, no fade back in, and above
+    /// all a *budget*. A quit that hangs is worse than a resume that did not
+    /// happen, so the wait gives up and the queue is abandoned once it is spent.
+    ///
+    /// It is deliberately its own decision rather than `restoreImpl` with a
+    /// flag. The normal restore reads the state and then the volume separately
+    /// and can spend three round trips before it plays; here the state and the
+    /// volume come back in the single `stateAndVolume` read (that is what the
+    /// protocol requirement bought) and the volume is only written when this
+    /// mode actually lowered it, so the whole undo is at most three AppleEvents.
+    ///
+    /// Two branches differ from the normal restore, both forced by the clock. A
+    /// `play` that lands while the state already reads `.playing` is a no-op
+    /// here rather than the "the user pressed play" evidence it is during a live
+    /// episode - and our own `pause` may not have landed even though ownership
+    /// was taken - so it is sent. And `.stopped` still means hands off: never
+    /// start playback the user stopped.
+    public func restoreAtShutdown() {
+        // Nothing was ducked, so nothing can be stranded. Checked before the
+        // queue hop so a normal quit costs nothing at all.
+        guard isOwned else { return }
+        let done = DispatchSemaphore(value: 0)
+        queue.async { [weak self] in
+            autoreleasepool {
+                guard let self else { return }
+                let owned = self.snapshot()
+                // Same pid or nothing: a Spotify that restarted is its own
+                // instance's business, exactly as in the normal restore.
+                if let pid = self.liveSpotifyPID(retries: 1), pid == owned.pid {
+                    let probe = self.control.stateAndVolume()
+                    // Instant never writes the volume, so there is nothing to
+                    // hand back and no reason to spend a round trip finding out.
+                    // Otherwise the same rule as the normal restore - give the
+                    // volume back unless we positively know the user moved it -
+                    // using the volume that came back in `probe` instead of
+                    // paying for a third read.
+                    if self.mode != .instant {
+                        let userMovedIt: Bool
+                        if let current = probe.volume, let ducked = owned.ducked {
+                            userMovedIt = current != ducked
+                        } else {
+                            userMovedIt = false
+                        }
+                        if !userMovedIt, let want = owned.volume {
+                            self.control.setVolume(want)
+                        }
+                    }
+                    if self.mode != .muteOnly, probe.state != .stopped {
+                        self.control.play()
+                    }
+                    self.onEvent?(.restored)
+                }
+                self.releaseOwnership()
+            }
+            done.signal()
+        }
+        _ = done.wait(timeout: .now() + Self.shutdownRestoreBudget)
+    }
+
+    /// Wall clock this will spend trying to hand the music back before the quit
+    /// continues regardless: one round trip of headroom over the three the undo
+    /// above can need.
+    private static let shutdownRestoreBudget: TimeInterval = 1.25
+
     // MARK: - Internals
 
     private func currentGeneration() -> UInt64 {
@@ -267,6 +334,17 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
         lock.unlock()
         onEvent?(.relinquished(reason))
         return reason
+    }
+
+    /// Drop ownership without announcing a reason: the cycle finished, so
+    /// there is nothing to give up.
+    private func releaseOwnership() {
+        lock.lock()
+        _ownedPID = nil
+        _duckedVolume = nil
+        lastSkipProbeAt = nil
+        pausedAt = nil
+        lock.unlock()
     }
 
     private func duckImpl(source: String, generation: UInt64) {
@@ -411,8 +489,6 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
             control.play()
             onDiagnostic?("restore: play command returned in \(Self.ms(since: startedAt))ms")
             settle()
-        case .muteOnly:
-            setVolumeSync(owned.volume ?? 100, generation: generation)
         }
         lock.lock()
         _ownedPID = nil

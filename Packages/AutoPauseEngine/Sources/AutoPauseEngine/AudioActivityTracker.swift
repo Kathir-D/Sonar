@@ -62,7 +62,11 @@ public final class AudioActivityTracker: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         for pid in pids where startedAt[pid] == nil { startedAt[pid] = Date() }
-        for pid in startedAt.keys where !pids.contains(pid) { startedAt[pid] = nil }
+        // Snapshot the keys before removing. Removing through the subscript
+        // while iterating `keys` copies the whole dictionary on the first write
+        // and then mutates a different one than the loop is walking, so the
+        // result is right by accident and the cost is paid on every scan.
+        for pid in Array(startedAt.keys) where !pids.contains(pid) { startedAt[pid] = nil }
     }
 
     private func syncProcessList() {

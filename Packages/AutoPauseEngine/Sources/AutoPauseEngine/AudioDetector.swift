@@ -8,8 +8,10 @@ import CoreAudio
 import Foundation
 
 /// A process that is currently producing output audio (public Core Audio API,
-/// macOS 14.2+). No audio-recording permission required. A single scan costs
-/// ~14 ms, so callers invoke it on demand, not on a hot loop.
+/// macOS 14.2+). No audio-recording permission required. One scan is normally
+/// a few milliseconds, but it is not reliably cheap: a browser with many audio
+/// helpers makes it slow enough to take seconds. Every caller in this package
+/// runs it on a background queue for that reason - see `PollDetector`.
 public struct AudioProcess: Sendable, Equatable {
     public let pid: pid_t
     public let bundleID: String
