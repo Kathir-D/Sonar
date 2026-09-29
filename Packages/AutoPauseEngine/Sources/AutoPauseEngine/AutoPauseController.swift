@@ -102,6 +102,9 @@ public final class AutoPauseController: @unchecked Sendable {
     /// Tick-rate telemetry state (engine-queue confined).
     private var tickCounter = 0
     private var lastTickReport = Date()
+    /// Often enough to diagnose a collapsed loop, rare enough that a day of
+    /// running does not push the bounded log's useful history out.
+    private static let tickReportInterval: TimeInterval = 30
 
     /// Which detector the last tick actually used. `.tap` only while the tap
     /// is receiving buffers; otherwise poll-only, which the UI must say out
@@ -203,7 +206,7 @@ public final class AutoPauseController: @unchecked Sendable {
 
             tickCounter += 1
             let now = Date()
-            if now.timeIntervalSince(lastTickReport) > 5 {
+            if now.timeIntervalSince(lastTickReport) > Self.tickReportInterval {
                 let elapsed = now.timeIntervalSince(lastTickReport)
                 onDiagnostic?(
                     "tick: \(String(format: "%.1f", Double(tickCounter) / elapsed)) Hz "

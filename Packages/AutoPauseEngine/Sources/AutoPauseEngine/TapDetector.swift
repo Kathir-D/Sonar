@@ -332,6 +332,9 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
     /// Capture-health reporting state (tap-queue confined).
     private var wasCapturing = false
     private var lastHealthReport = Date.distantPast
+    /// Deliberately slow: transitions are logged the moment they happen, so
+    /// this heartbeat only exists to show a long quiet stretch is healthy.
+    private static let healthReportInterval: TimeInterval = 60
     /// Serialises the blocking HAL teardown calls off the tap queue.
     private let teardownQueue = DispatchQueue(label: "sonar.tap-detector.teardown")
     /// The IOProc's own queue, and it must never be the queue the detector does
@@ -1149,7 +1152,7 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
             )
         }
         let now = Date()
-        if now.timeIntervalSince(lastHealthReport) > 30 {
+        if now.timeIntervalSince(lastHealthReport) > Self.healthReportInterval {
             lastHealthReport = now
             let aggregate = aggregateID
             let alive = aggregate != 0 ? (propertyUInt32(aggregate, kAudioDevicePropertyDeviceIsAlive) ?? 0) : 0

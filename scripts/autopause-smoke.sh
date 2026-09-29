@@ -73,7 +73,12 @@ PAUSE_THRESHOLD_MS="${PAUSE_THRESHOLD_MS:-2000}"
 RESUME_THRESHOLD_MS="${RESUME_THRESHOLD_MS:-3000}"
 TONE_SECONDS="${TONE_SECONDS:-6}"
 SETTLE_SECONDS="${SETTLE_SECONDS:-8}"
-POLL_INTERVAL="${POLL_INTERVAL:-0.05}"
+# 0.05 s looked tighter but is actively harmful: every sample is a fresh
+# `osascript` process, and spawning one every 50 ms was measured dropping the
+# engine's own 10 Hz decision loop to 0.8 Hz - the test was slowing down the
+# thing it was timing. 0.1 s costs 200 ms of resolution and leaves the loop
+# alone, which is the right trade for a smoke test with a seconds-wide budget.
+POLL_INTERVAL="${POLL_INTERVAL:-0.1}"
 SPOTIFY_LAUNCH_TIMEOUT="${SPOTIFY_LAUNCH_TIMEOUT:-30}"
 
 DO_BUILD=0
@@ -177,6 +182,16 @@ note_result() { # name status latency threshold detail
 
 FAILURES=0
 bump() { FAILURES=$((FAILURES + 1)); }
+
+# The assertion phase is the only part that proves anything. If it is supposed
+# to run and never finished - a crash, an unbound variable, an interrupted
+# sleep - the run must fail rather than tally up the setup steps and call it
+# green.
+# 0 = not started, 1 = finished. A phase that starts and never reaches its own
+# end is a failure, not a pass.
+ASSERT_PHASE_DONE=0
+assert_phase_started() { ASSERT_PHASE_DONE=1; }
+assert_phase_finished() { ASSERT_PHASE_DONE=2; }
 
 # ------------------------------------------------------------------ timestamps
 
@@ -669,6 +684,13 @@ print_summary() {
         printf '%s%-6s  %-30s  %-9s  %-8s  %s%s\n' \
             "$_c" "$_status" "$_name" "$_ms" "$_bg" "$C_RESET" "$_detail"
     done < "$RESULTS"
+    if [ "$ASSERT_PHASE_DONE" -ne 2 ]; then
+        # Only the last phase proves the feature works; treat a phase that
+        # never finished as a failure even if every setup step passed.
+        printf '\n  %-6s  %-30s  %s\n' "FAIL" "assert-phase-completed" \
+            "the duck/resume assertions did not finish, so nothing was proven"
+        FAILURES=$((FAILURES + 1))
+    fi
     if [ "$FAILURES" -eq 0 ]; then
         printf '\n%s\n' "${C_GREEN}All assertions passed.${C_RESET}"
     else
@@ -1154,6 +1176,7 @@ RESUME_QUANTUM_MS=''
 
 if [ "$DRY_RUN" -eq 0 ] && [ "$SKIP_ASSERT" -eq 0 ] && [ "$SKIP_TONE" -eq 0 ] && [ "$SKIP_LAUNCH" -eq 0 ]; then
     head1 'STEP 6  Assert the duck and the resume'
+    assert_phase_started
     if [ "$(spotify_state)" != "playing" ]; then
         bump
         note_result 'spotify-playing-before-tone' FAIL '' '' "state is $(spotify_state), expected playing"
@@ -1162,8 +1185,19 @@ if [ "$DRY_RUN" -eq 0 ] && [ "$SKIP_ASSERT" -eq 0 ] && [ "$SKIP_TONE" -eq 0 ] &&
     fi
 
     say "Playing the tone now; polling Spotify every ${POLL_INTERVAL}s."
-    run afplay "$TONE_WAV"
-    AFPLAY_PID=$!
+    # afplay itself is backgrounded, not the `run` wrapper. Backgrounding the
+    # wrapper makes `$!` the pid of a subshell that merely *waits* for afplay,
+    # and the early-stop below then kills that subshell and leaves afplay
+    # playing: the tone runs on for seconds after the script decided it had
+    # stopped, and the resume is timed against a room that is still loud. The
+    # wrapper is also not usable at all in the foreground - it blocks for the
+    # whole tone, and `$!` after it is unbound, which aborted the script at
+    # exactly the point where it starts printing PASS lines.
+    say "$ afplay $TONE_WAV &"
+    if [ "$DRY_RUN" -eq 0 ]; then
+        afplay "$TONE_WAV" >/dev/null 2>&1 &
+        AFPLAY_PID=$!
+    fi
     SPOTIFY_TOUCHED=1
     TONE_START_MS="$(now_ms)"
     note "Tone started at ${TONE_START_MS} ms (monotonic)."
@@ -1216,6 +1250,7 @@ if [ "$DRY_RUN" -eq 0 ] && [ "$SKIP_ASSERT" -eq 0 ] && [ "$SKIP_TONE" -eq 0 ] &&
         note_result 'spotify-resumed' FAIL '' "$RESUME_THRESHOLD_MS" \
             "still $(spotify_state) after the tone stopped"
     fi
+    assert_phase_finished
 else
     if [ "$DRY_RUN" -eq 1 ]; then
         note "STEP 6  Assertions: dry run, so nothing is played and nothing is timed."
