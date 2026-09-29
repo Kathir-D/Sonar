@@ -155,27 +155,38 @@ stops matching a preset, and the pane says why.
 
 ## Install
 
-Sonar is **not** signed with a paid Apple Developer ID, so it is ad-hoc signed and un-notarized.
-That is deliberate: the project has no budget for the $99/year membership. It has one consequence,
-and it is small.
+Three ways, in order of how much they should be preferred.
 
-**Homebrew is the supported install path, and it is unaffected.** Homebrew downloads with `curl`,
-which does not set the `com.apple.quarantine` attribute, and Gatekeeper only ever engages on a
-quarantined file. A curl-fetched, ad-hoc Sonar installs to `/Applications` and launches.
-
-Downloading the zip in a *browser* does set quarantine, so macOS may ask you to approve the app
-once in **System Settings › Privacy & Security › Open Anyway**. Prefer the cask.
-
-### Homebrew
+### Homebrew (recommended)
 
 ```sh
 brew tap Kathir-D/tap
 brew install --cask sonar
 ```
 
-Lands in `/Applications/Sonar.app`. The cask lives at [`Casks/sonar.rb`](Casks/sonar.rb) and is
-mirrored into the [`homebrew-tap`](https://github.com/Kathir-D/homebrew-tap) repository; its
-checksum is filled in by the release run. Update later with `brew upgrade --cask sonar`.
+Installs to `/Applications/Sonar.app`. Update with `brew upgrade --cask sonar`. The cask lives in
+the [`homebrew-tap`](https://github.com/Kathir-D/homebrew-tap) repository and is published by the
+release workflow, with the release's real SHA-256 already substituted in.
+
+### Direct download
+
+```sh
+curl -fLO https://github.com/Kathir-D/Sonar/releases/download/v0.1.0/Sonar-0.1.0.zip
+unzip Sonar-0.1.0.zip
+sudo mv Sonar.app /Applications/
+open /Applications/Sonar.app
+```
+
+Verify it if you like:
+
+```sh
+shasum -a 256 Sonar-0.1.0.zip   # f0c177e9c82fdbc0b2cc8f0c46c238aa36a0ba5929f6750cfb7cd199b65f39f6
+```
+
+`curl` does not set the `com.apple.quarantine` attribute, and Gatekeeper only engages on
+quarantined files, so this path behaves like the cask. **Downloading the same zip from a browser
+instead does set quarantine**, and macOS will then want you to approve the app once in
+**System Settings › Privacy & Security › Open Anyway**. Nothing to fix — just know it is coming.
 
 ### Build from source
 
@@ -186,10 +197,8 @@ scripts/build-app.sh
 open dist/Sonar.app
 ```
 
-`scripts/build-app.sh` builds Release, stamps `VERSION` into the bundle, and leaves the result at
-`dist/Sonar.app`.
-
-To run it in Xcode instead:
+`scripts/build-app.sh` builds Release, stamps `VERSION` and an increasing build number into the
+bundle, ad-hoc signs it, and leaves the result at `dist/Sonar.app`. To run it in Xcode instead:
 
 ```sh
 open SpotMenu.xcodeproj   # still named after the upstream fork
@@ -198,10 +207,11 @@ open SpotMenu.xcodeproj   # still named after the upstream fork
 Build and run the `Sonar` scheme. Sonar is an `LSUIElement` app — menu bar only, no Dock icon and
 no main window — so look for the Spotify track in the menu bar.
 
-> **One caveat for builds from source.** A local build is ad-hoc signed, and macOS ties the
-> Screen & System Audio Recording grant to a code signature. **Every rebuild therefore invalidates
-> the grant and macOS asks again.** That is expected, not a bug, and it applies equally to the
-> cask install.
+> **One caveat that applies to every install method.** Sonar is ad-hoc signed, because the project
+> has no paid Apple Developer account, so it is not notarized. macOS ties the Screen & System
+> Audio Recording grant to a code signature, which means **every rebuild or reinstall invalidates
+> the grant and macOS asks again.** That is expected, not a bug. If macOS blocks a launch, approve
+> it in System Settings › Privacy & Security.
 
 [⬆ Back to top](#sonar)
 
