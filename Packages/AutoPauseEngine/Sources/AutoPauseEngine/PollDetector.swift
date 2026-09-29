@@ -84,6 +84,25 @@ public final class PollDetector: RefreshingDetector, @unchecked Sendable {
     /// Own pid, for the self-exclusion. Injectable for tests.
     public var selfPID: pid_t = getpid()
 
+    /// CoreAudio's process scan is not cheap and is not reliably fast: it
+    /// reads several properties per process and resolves names through
+    /// NSRunningApplication, and a browser with many helpers makes it slow
+    /// enough to take seconds. Running that on the engine's tick starved
+    /// fusion entirely - the engine spent 100% of its time inside the scan
+    /// and never evaluated a decision, so auto-pause did nothing. So the scan
+    /// runs on its own queue, at most one in flight, and the tick reads the
+    /// last result instead of blocking on a fresh one.
+    private let scanQueue = DispatchQueue(
+        label: "sonar.poll-scan",
+        qos: .utility
+    )
+    /// Minimum spacing between scans. Activity detection does not need the
+    /// engine's full 10 Hz.
+    public var minScanInterval: TimeInterval = 0.25
+    private let scanLock = NSLock()
+    private var lastScanAt: Date?
+    private var scanInFlight = false
+
     public init() {}
 
     public var latestSignal: AudioSignal? {
@@ -94,6 +113,9 @@ public final class PollDetector: RefreshingDetector, @unchecked Sendable {
 
     public func start() {
         tracker.start()
+        // Seed synchronously so the very first tick has a real reading rather
+        // than a false "all quiet" (which could resume Spotify spuriously).
+        performScan()
     }
 
     public func stop() {
@@ -108,14 +130,45 @@ public final class PollDetector: RefreshingDetector, @unchecked Sendable {
         return PollRules.filtered(found, selfPID: selfPID, filter: filter)
     }
 
-    /// One poll tick. Returns the signal and publishes it as `latestSignal`.
+    /// One poll tick. Returns the most recent signal and schedules a refresh
+    /// when one is due. Never blocks the caller on CoreAudio.
     @discardableResult
     public func refresh() -> AudioSignal {
+        let now = Date()
+        let due: Bool = scanLock.withLock {
+            if scanInFlight { return false }
+            if let last = lastScanAt, now.timeIntervalSince(last) < minScanInterval {
+                return false
+            }
+            scanInFlight = true
+            lastScanAt = now
+            return true
+        }
+        if due {
+            scanQueue.async { [weak self] in
+                autoreleasepool {
+                    guard let self else { return }
+                    defer { self.scanLock.withLock { self.scanInFlight = false } }
+                    self.performScan()
+                }
+            }
+        }
+        return latestSignal ?? AudioSignal(isActive: false, rms: nil)
+    }
+
+    private func performScan() {
         let sources = activeSources()
         let signal = AudioSignal(isActive: !sources.isEmpty, rms: nil)
         lock.lock()
         _latest = signal
         lock.unlock()
-        return signal
+    }
+}
+
+private extension NSLock {
+    func withLock<T>(_ body: () -> T) -> T {
+        lock()
+        defer { unlock() }
+        return body()
     }
 }

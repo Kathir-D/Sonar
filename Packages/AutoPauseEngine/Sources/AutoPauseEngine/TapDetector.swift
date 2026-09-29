@@ -122,6 +122,11 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
     private var tapID: AudioObjectID = 0
     private var aggregateID: AudioObjectID = 0
     private var ioProc: AudioDeviceIOProcID?
+    /// How many times the IOProc has actually delivered buffers. A tap can
+    /// start cleanly and still deliver nothing, so this is the only honest
+    /// proof the capture path works.
+    private var ioProcCallbacks: Int = 0
+    private let callbackLock = NSLock()
     private var listenersInstalled = false
     private var sleepObservers: [NSObjectProtocol] = []
     private var running = false
@@ -345,6 +350,14 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
         }
         description.name = "Sonar auto-pause"
         description.isPrivate = true
+        // Per CATapDescription.h, deviceUID/stream say which output the tap
+        // captures and the tap's format matches that stream. Left unset, the
+        // tap starts and delivers buffers, but they are silence on this OS.
+        // Bind it to the current default output, stream 0.
+        if let deviceUID = defaultOutputDeviceUID() {
+            description.deviceUID = deviceUID
+            description.stream = 0
+        }
         // Required: per CATapDescription.h, `exclusive` means "tap all
         // processes except the processes listed". A global-except tap with
         // isExclusive=false refuses AudioDeviceStart ('nope'); verified live.
@@ -367,13 +380,16 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
         // Apple's sample flow uses a visible aggregate. The tap itself stays
         // private so only Sonar sees the captured audio.
         //
-        // The UID is per-process on purpose. A fixed UID means a crashed or
-        // killed run leaves a stale aggregate registered system-wide, and
-        // every later AudioHardwareCreateAggregateDevice then fails with
-        // 'nope' (0x6E6F7065) until logout - the tap would never recover.
+        // The UID is per-aggregate, per Apple: their sample uses
+        // UUID().uuidString. A fixed UID means a crashed or killed run leaves
+        // a stale aggregate registered system-wide, and every later
+        // AudioHardwareCreateAggregateDevice then fails with 'nope'
+        // (0x6E6F7065) - the tap would never recover. A per-pid UID is not
+        // enough either, because a rebuild within one run would collide with
+        // the aggregate it is replacing.
         let aggregate: CFDictionary = [
             kAudioAggregateDeviceNameKey: "Sonar auto-pause",
-            kAudioAggregateDeviceUIDKey: "SonarAutoPauseAggregate.\(getpid())",
+            kAudioAggregateDeviceUIDKey: UUID().uuidString,
         ] as CFDictionary
         var agg = AudioObjectID(0)
         st = AudioHardwareCreateAggregateDevice(aggregate, &agg)
@@ -414,6 +430,33 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
             throw TapError.start(st)
         }
         setStatus(.active(rms: 0))
+        confirmAudioIsFlowing()
+    }
+
+    /// A tap can come up successfully and still never deliver a buffer - the
+    /// aggregate runs, the IOProc exists, and the output is silence. Left
+    /// alone that is the worst case: the UI claims loudness detection is on
+    /// while it measures nothing. So confirm audio arrives shortly after
+    /// starting, and downgrade to unavailable if it does not, which hands
+    /// detection back to poll.
+    private func confirmAudioIsFlowing(wait: TimeInterval = 3.0) {
+        let deadline = Date().addingTimeInterval(wait)
+        while Date() < deadline {
+            callbackLock.lock()
+            let seen = ioProcCallbacks
+            callbackLock.unlock()
+            if seen > 0 { return }  // real buffers: the capture path works
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        callbackLock.lock()
+        let seen = ioProcCallbacks
+        callbackLock.unlock()
+        guard seen == 0 else { return }
+        tearDownTap()
+        setStatus(
+            .unavailable(
+                reason: "tap started but delivered no audio (aggregate running, no buffers)"
+            ))
     }
 
     /// Poll the aggregate until it reports alive (or the device list says it
@@ -463,26 +506,59 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
         return st
     }
 
-    /// Attach the tap to the aggregate via kAudioAggregateDevicePropertyTapList
-    /// (Apple sample flow).
-    ///
-    /// Drift compensation is required, not optional: an aggregate whose only
-    /// sub-device is a tap has no clock of its own, so without it the tap
-    /// stream never runs and the IOProc delivers zeros forever - the tap
-    /// reports active while measuring pure silence.
+
+    /// UID of the system default output device, if there is one.
+    private func defaultOutputDeviceUID() -> String? {
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var device = AudioObjectID(0)
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &device
+        ) == noErr, device != kAudioObjectUnknown else { return nil }
+
+        var uidAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceUID,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var uid: CFString = "" as CFString
+        var uidSize = UInt32(MemoryLayout<CFString>.size)
+        guard AudioObjectGetPropertyData(
+            device, &uidAddr, 0, nil, &uidSize, &uid
+        ) == noErr else { return nil }
+        let value = uid as String
+        return value.isEmpty ? nil : value
+    }
+
+    /// Attach the tap to the aggregate via kAudioAggregateDevicePropertyTapList,
+    /// following Apple's "Capturing system audio with Core Audio taps" sample:
+    /// read the current list, add this tap's UID if it is missing, write it
+    /// back. The list is an array of CFString tap UIDs - not dictionaries.
     private func attachTap(uid: String, to aggregate: AudioObjectID) throws {
         var addr = AudioObjectPropertyAddress(
             mSelector: kAudioAggregateDevicePropertyTapList,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
-        var list: CFArray = [
-            [
-                kAudioSubTapUIDKey: uid,
-                kAudioSubTapDriftCompensationKey: true,
-            ]
-        ] as CFArray
-        let st = withUnsafeMutablePointer(to: &list) { ptr in
+
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(aggregate, &addr, 0, nil, &size) == noErr
+        else { throw TapError.attach(noErr) }
+
+        var list: CFArray? = nil
+        _ = withUnsafeMutablePointer(to: &list) { ptr in
+            AudioObjectGetPropertyData(aggregate, &addr, 0, nil, &size, ptr)
+        }
+
+        var uids: [String] = (list as? [String]) ?? []
+        if !uids.contains(uid) { uids.append(uid) }
+
+        var out: CFArray = uids as CFArray
+        let st = withUnsafeMutablePointer(to: &out) { ptr in
             AudioObjectSetPropertyData(
                 aggregate, &addr, 0, nil,
                 UInt32(MemoryLayout<CFArray>.size), ptr
@@ -522,6 +598,9 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
     // MARK: - Metering
 
     private func handleAudioBlock(_ inInputData: UnsafePointer<AudioBufferList>) {
+        callbackLock.lock()
+        ioProcCallbacks += 1
+        callbackLock.unlock()
         let measured = meter(block: inInputData)
         queue.async { [weak self] in self?.ingest(rms: measured) }
     }

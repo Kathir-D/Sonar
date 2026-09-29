@@ -10,6 +10,9 @@ struct AutoPausePreferencesView: View {
     /// Re-applies engine settings whenever the model changes, so nothing has
     /// to be confirmed. Debounced because the sliders emit continuously.
     @State private var liveApply: AnyCancellable?
+    /// Shown when Auto-Pause is switched on without the permission that makes
+    /// it accurate.
+    @State private var showPermissionAlert = false
 
     var body: some View {
         ScrollView {
@@ -36,6 +39,33 @@ struct AutoPausePreferencesView: View {
         .onDisappear {
             recent.stop()
             liveApply = nil
+        }
+        .onChange(of: model.enabled) { _, enabled in
+            // Turning it on without the permission leaves it working on
+            // process polling, which cannot tell silence from sound - so a
+            // paused video can hold the resume for many seconds. Ask now,
+            // while the user is actually turning the feature on.
+            if enabled, host.uiState == .tapUnavailable {
+                showPermissionAlert = true
+            }
+        }
+        .alert(
+            "Grant Audio Recording for accurate Auto-Pause",
+            isPresented: $showPermissionAlert
+        ) {
+            Button("Open System Settings") {
+                openPrivacyPane(.screenRecording)
+            }
+            Button("Not now", role: .cancel) {}
+        } message: {
+            Text(
+                "Sonar is running on process polling, which only knows whether an "
+                    + "app is holding the audio output - not whether it is making "
+                    + "sound. Browsers hold the output long after a video stops, so "
+                    + "Spotify can take many seconds to resume. Screen & System "
+                    + "Audio Recording lets Sonar measure actual loudness and "
+                    + "resume immediately."
+            )
         }
     }
 
@@ -369,4 +399,19 @@ struct AutoPausePreferencesView: View {
         model: AutoPausePreferencesModel(),
         host: SonarEngineHost()
     )
+}
+
+/// The System Settings panes Auto-Pause depends on.
+private enum PrivacyPane: String {
+    case screenRecording = "Privacy_ScreenCapture"
+    case automation = "Privacy_Automation"
+
+    var url: URL? {
+        URL(string: "x-apple.systempreferences:com.apple.preference.security?\(rawValue)")
+    }
+}
+
+private func openPrivacyPane(_ pane: PrivacyPane) {
+    guard let url = pane.url else { return }
+    NSWorkspace.shared.open(url)
 }

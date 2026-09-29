@@ -78,7 +78,30 @@ private func proc(
 @Test func pollDetectorRefreshPublishesSignal() {
     let detector = PollDetector()
     detector.selfPID = getpid()
+    detector.minScanInterval = 0
     let signal = detector.refresh()
-    #expect(detector.latestSignal == signal)
     #expect(signal.rms == nil)  // poll backend has no loudness data
+    // refresh() must not block on CoreAudio: the scan is scheduled and the
+    // last reading is returned. Wait for the scan to land, then confirm the
+    // published signal matches what was returned.
+    let deadline = Date().addingTimeInterval(5)
+    while detector.latestSignal == nil, Date() < deadline {
+        Thread.sleep(forTimeInterval: 0.05)
+    }
+    #expect(detector.latestSignal != nil)
+    #expect(detector.latestSignal == detector.refresh())
+}
+
+@Test func pollRefreshDoesNotBlockOnASlowScan() {
+    // A scan can take seconds when a browser holds many audio helpers. The
+    // tick must return promptly regardless, or fusion never evaluates and
+    // auto-pause silently stops working.
+    let detector = PollDetector()
+    detector.selfPID = getpid()
+    detector.minScanInterval = 0
+
+    let start = Date()
+    for _ in 0..<10 { _ = detector.refresh() }
+    let elapsed = Date().timeIntervalSince(start)
+    #expect(elapsed < 0.5, "10 refreshes took \(elapsed)s - the scan is blocking the tick")
 }
