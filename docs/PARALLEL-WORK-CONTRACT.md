@@ -127,3 +127,94 @@ Automation:                      x-apple.systempreferences:com.apple.preference.
 `CGPreflightScreenCaptureAccess()` flips live when the user grants in System Settings, but
 there is no notification; poll it (1 s) while the permission UI is on screen and on
 `NSApplication.didBecomeActiveNotification`.
+
+## Audit reports — read before you build on someone else's code
+
+These are read-only reviews, not patches. Nothing in them has been applied, and the
+`file:line` references are pinned to the SHA-1s recorded at the top of each report,
+so a line number that does not match your working copy means your file is newer than
+the report — re-derive the line, not the finding.
+
+| Report | Covers | Read it if |
+|---|---|---|
+| [`AUTOPAUSE-ENGINE-AUDIT.md`](AUTOPAUSE-ENGINE-AUDIT.md) | All 12 files in `Packages/AutoPauseEngine/Sources/AutoPauseEngine/`, `Sonar/Engine/SonarEngineHost.swift`, `AutoPausePreferencesModel.swift`, the engine tests | You touch any of the above. It has a per-agent "what to do with this" section (§7) listing the specific findings that are yours. |
+| [`AUTOPAUSE-PANE-NOTES.md`](AUTOPAUSE-PANE-NOTES.md) | The Auto-Pause preferences pane: `AutoPausePreferencesView.swift`, `AutoPausePreferencesModel.swift`, `Sonar/Engine/SonarPermissions.swift` | You change `AutoPausePreset`, `AutoPauseController.drivingDetector`, `SourceFilterMode`, or anything `SonarEngineHost` publishes. §2 lists every engine symbol the pane depends on and what breaks in the UI if it moves, plus the nine pieces of pane behaviour that look like bugs and are not. |
+
+Two things the engine and the pane have to agree on, both now in the pane notes:
+
+- `AutoPausePreset.threshold` differs per preset (Fade 0.02, Instant 0.01). Anything that
+  keeps a single threshold constant of its own will mislabel Instant as "Custom" the moment
+  a user picks it.
+- The pane derives "Custom" from `AutoPausePreset.matches(…threshold:)`, so a field added to
+  a preset has to be added to the pane's `matches(_:)` too, or hand-tuned settings keep
+  being labelled as a preset.
+- `AGENT-TESTS-REPORT.md` §3.1 (removing the `threshold: Float = 0.02` default from
+  `matches`) is **already satisfied on the pane side**: the only app call site,
+  `AutoPausePreferencesModel.matches(_:)`, passes the real threshold explicitly, so the
+  signature change compiles as-is and nothing is blocked on agent-ui.
+
+Highest-value items in the auto-pause audit, if you only read one section:
+
+- **§2d item 1, one line, ~300 ms:** `stateAndVolume()` is a protocol *extension
+  default* (`SpotifyControl.swift:41`), not a protocol requirement, so every call
+  through `any SpotifyControl` statically dispatches to the two-read default and
+  the single-round-trip AppleScript override is unreachable. The "~0.36 s to pause"
+  in commit `321196e` assumed the fast path that does not run.
+- **§1 S1-3/S1-4/S1-5, one change, three findings:** the engine tick calls the
+  adapter's `*Sync` methods on the engine's own serial queue while
+  `SonarEngineHost` calls the async `restore()` on the adapter's queue. That blocks
+  the 10 Hz decision loop for a whole fade, allows two threads inside
+  `NSAppleScript` at once (commit `b291620` documents that as an
+  `EXC_BAD_ACCESS`), and makes every generation-token guard permanently true. The
+  async trio at `SpotifyFadeAdapter.swift:84,94,104` already exists; make it the
+  only entry point.
+- **§1 S1-7, new code:** a wedged `AudioDeviceStop` during sleep leaves
+  `TapDetector.tearingDown == true` forever, and `rebuildIfNeeded` then refuses to
+  ever build again — the tap is dead for the session with no log line.
+
+Two notes for whoever commits this work:
+
+1. The engine was being rewritten by agent-engine while the audit was running
+   (`TapDetector.swift` changed three times; `AutoPauseController.swift`,
+   `AutoPausePreset.swift` and `SonarEngineHost.swift` were all rewritten at
+   21:03–21:07). Verify the tree builds and the full suite passes before staging,
+   and do not bundle a documentation file with another agent's half-finished code.
+2. The audit makes no claim about the current test count. Three test files
+   document known bugs as expected behaviour with `_KNOWNBUG` suffixes; those are
+   the assertions to flip once the corresponding fix lands.
+
+---
+
+## Update 21:30 — agent-tests has finished, 271 tests green
+
+Full test report: **`docs/AGENT-TESTS-REPORT.md`**. Read §0 first — it is a
+per-agent summary of what is blocked on whom.
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --package-path Packages/AutoPauseEngine
+# ✔ Test run with 271 tests in 0 suites passed
+```
+
+`DEVELOPER_DIR` is required for `swift test` exactly as it is for `xcodebuild`:
+CommandLineTools ships no `Testing` module, so a bare `swift test` fails on every
+test file. Suite is hardware-free, permission-free, ~2.7 s, verified over 8 runs.
+
+**agent-engine** — five Source bugs in `AGENT-TESTS-REPORT.md` §3.1–3.7 have a test
+already asserting the current (wrong) behaviour, so fixing them makes a test change.
+§3.1 and §3.2 are one-liners. §3.4 (the missing `_restoreInProgress`) is new and is
+not in the audit.
+
+**agent-ui** — **§3.1 is a coordinated change.** `AutoPausePreset.matches` will lose
+its `threshold: Float = 0.02` default, because that hard-coded 0.02 makes
+`AutoPausePreset.instant.matches(...)` always false — the Instant button can never
+render as selected. Every call site in `AutoPausePreferencesModel.swift` must be
+updated in the same commit or the project will not compile.
+
+**agent-e2e** — nothing needed from agent-tests; no audio, Spotify, permissions or
+scripts were touched. `scripts/autopause-smoke.sh` is still yours.
+
+**agent-tests** — nothing further outstanding. The one gap that needs a source
+change first is §3.7 (`AutoPauseController.tap` typed as concrete `TapDetector?`),
+which makes the positive tap-drives half of the detector contract untestable. Two
+tests are written and parked behind `#if TAP_FAKES`; they compile as-is once the
+`TapSignalSource` protocol lands.
