@@ -94,6 +94,7 @@ brew install --cask sonar
   - [Which apps pause your music](#which-apps-pause-your-music)
   - [How the decision is made](#how-the-decision-is-made)
   - [Ownership: never fight the user](#ownership-never-fight-the-user)
+  - [state.json for companion tools](#statejson-for-companion-tools)
   - [Permissions](#permissions)
   - [Measured behaviour](#measured-behaviour)
   - [Known limitations](#known-limitations)
@@ -160,6 +161,9 @@ stops matching a preset, and the pane says why.
   pause, volume change, player restart, or quit releases ownership and restores your volume.
 - **No Premium required** — playback control goes through AppleScript, so it works with a normal
   Spotify install and with `headless-spotify` (same `com.spotify.client` bundle).
+- **Works with [trak](https://github.com/Kathir-D/trak)** — the terminal UI for Spotify can read
+  what Auto-Pause is doing from a small [state file](#statejson-for-companion-tools), so it can
+  show *ducked* instead of guessing why the music stopped.
 
 **Diagnostics**
 
@@ -475,6 +479,32 @@ Volume fades step every 100 ms on a single serialised queue, so a fade can be in
 cancelled mid-ramp without leaving Spotify at a random volume — and so the Apple Events are never
 entered from two threads at once, which is a reliable way to crash.
 
+### state.json for companion tools
+
+Sonar writes what Auto-Pause is doing to `~/Library/Application Support/Sonar/state.json`, so
+another tool can show it. [trak](https://github.com/Kathir-D/trak) reads it; anything else is
+welcome to.
+
+```json
+{"v":1,"state":"ducked","pid":4321,"since":1790737928}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `v` | Format version, currently `1`. A breaking change bumps it, so check it before reading on |
+| `state` | `idle`, `ducking` (fading out), `ducked` (Sonar is holding the music), or `resuming` (fading back in) |
+| `pid` | The Spotify process Sonar is holding, or `null` when `idle` |
+| `since` | When this state began, in Unix seconds |
+
+The file is rewritten on every change of state, never piecemeal: Sonar writes a temp file next to
+it and renames it into place, so a reader never sees half a file. It says `idle` when Auto-Pause is
+switched off and when Sonar quits. It is entirely optional: Sonar never reads it back, and a
+write that fails is logged and ignored. A force quit leaves the last state behind, so treat an old
+`since` with a Sonar that is not running as `idle`.
+
+While the state is `ducked`, a pause sent from another tool changes nothing Sonar can see (see
+[Known limitations](#known-limitations)), so Sonar will still resume when the room goes quiet.
+
 ### Permissions
 
 Auto-Pause needs exactly two permissions, and it will not switch on without both. Preferences ›
@@ -727,8 +757,8 @@ changed underneath the tap. Sonar rebuilds the tap when the hardware list change
 | `Sonar/Playback/` | Playback panel, scrubber, Spotify auth |
 | `Sonar/Preferences/` | SwiftUI preference panes, including Auto-Pause |
 | `Sonar/UI/` | Menu, popover window, status-item configuration |
-| `Sonar/Engine/` | Engine host, permission state, bounded log |
-| `Packages/AutoPauseEngine/` | The auto-pause engine as a standalone Swift package, with its own 296-test suite |
+| `Sonar/Engine/` | Engine host, permission state, bounded log, the `state.json` publisher |
+| `Packages/AutoPauseEngine/` | The auto-pause engine as a standalone Swift package, with its own 311-test suite |
 | `scripts/` | Build, package, sign, cask and smoke-test helpers |
 | `docs/` | [The Auto-Pause deep dive](docs/HOW-AUTOPAUSE-WORKS.md), the [release runbook](docs/RELEASING.md), the engine audit and its release triage |
 
@@ -851,6 +881,10 @@ backgrounds. The Spotify mark itself is Spotify's, not SpotMenu's.
 | Poll detector, ownership patterns | [yasinozmeen/smartpause](https://github.com/yasinozmeen/smartpause) | @yasinozmeen | MIT 2026 | `69f3a9d` | Verbatim port, headers kept |
 | Tap and ducking concepts | [mattwong05/FlowSound](https://github.com/mattwong05/FlowSound) | @mattwong05 | No license — ideas only | n/a | Reimplemented from Apple docs, nothing copied |
 | CoreAudio tap APIs | Apple Developer documentation | Apple | — | — | Clean-room implementation |
+
+**Works with [trak](https://github.com/Kathir-D/trak)**, a terminal UI for Spotify by the same
+author. The two only share the [state file](#statejson-for-companion-tools); neither depends on
+the other, and no trak code is in Sonar.
 
 Full license texts and per-file notes: [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
