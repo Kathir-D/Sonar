@@ -756,7 +756,7 @@ all in the test:
 
 ### What the unit suite does and does not cover
 
-`swift test` (272 tests at commit `15a0185`, ~3 s, no hardware, no permissions) pins the
+`swift test` (296 tests, ~3 s, no hardware, no permissions) pins the
 decision loop, the streak boundaries, the metering maths including non-interleaved float32
 buffers — which is what a tap actually delivers — the adapter's ownership rules, and the
 detector-preference contract.
