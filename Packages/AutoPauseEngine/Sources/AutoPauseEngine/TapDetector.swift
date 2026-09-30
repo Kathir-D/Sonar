@@ -340,7 +340,33 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
     /// copy other threads (the app host) are allowed to read.
     private let runningLock = NSLock()
     private var _isRunning = false
+    /// The device list as last seen by a notification, and the ids in it that
+    /// belong to this detector. Both are how a device change is told apart from
+    /// the aggregate appearing and disappearing on its own; see
+    /// `deviceListChanged()`.
+    private var knownDeviceIDs: Set<AudioObjectID> = []
+    /// The aggregate currently running plus the one just released. The released
+    /// one has to stay in the set for as long as it takes coreaudiod to actually
+    /// destroy it, which is on another queue and can be slow.
+    private var ownedDeviceIDs: Set<AudioObjectID> = []
     private var lastTargets: TapTargets?
+    /// When the tap that is running now was built and still owes us proof that
+    /// it carries sound, and the output it is bound to. Opened by every
+    /// successful build, closed by `reportCaptureHealth`.
+    private var verifyStartedAt: Date?
+    private var verifyDeviceUID: String?
+    /// A silent verdict has already been logged for this silent stretch, so the
+    /// next rebuild does not say it again. Cleared the moment the tap measures
+    /// anything.
+    private var loggedSilence = false
+    /// How long a new tap has to show a non-zero sample before it is called
+    /// silent. Long enough to cover a rebuild landing between two songs, and
+    /// short enough that a tap reading zeros all day is caught within seconds
+    /// of it being built.
+    private static let verifyWindow: TimeInterval = 5.0
+    /// Below this a tap is delivering zeros, not a quiet room: the loudest thing
+    /// any of this measures is 0…1, and a genuine silence reads as exactly 0.
+    private static let audibleFloor: Float = 0.0005
     private var lastBuildAt = Date.distantPast
     private var rebuildScheduled = false
     /// True while the HAL teardown of a previous tap is still in flight. A
@@ -407,7 +433,7 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
                 self.smoother.config = self.config
                 // Conditional: rebuilds only when the resolved targets
                 // changed, so Save restarts the tap only when rules change.
-                self.rebuildIfNeeded(reason: "config")
+                self.rebuildIfNeeded(reason: .config)
             }
         }
     }
@@ -555,7 +581,7 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
             self.running = true
             self.publishRunning()
             self.setStatus(.starting)
-            self.rebuildIfNeeded(reason: "start", force: true)
+            self.rebuildIfNeeded(reason: .start, force: true)
         }
         startQuietTimer()
     }
@@ -583,11 +609,74 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
 
     // MARK: - Tap construction (documented Apple flow)
 
-    /// Rebuild unless debounced away. Process/device notifications only
-    /// rebuild when the resolved targets actually changed — our own
-    /// aggregate appearing/disappearing fires device notifications that
-    /// must not loop.
-    private func rebuildIfNeeded(reason: String, force: Bool = false) {
+    /// What a notification wants a rebuild for. The reason is part of the
+    /// decision, not just the log line: a device change cannot be answered out
+    /// of the cached resolution, so it gets its own case rather than being
+    /// folded into a `reason:` string.
+    enum RebuildReason: String, Sendable, Equatable {
+        case start
+        case config
+        /// A device appeared, disappeared or reconfigured.
+        case deviceChange
+        /// The set of audio processes changed.
+        case processChange
+        case wake
+        case afterTeardown
+        case retry
+    }
+
+    /// What a notification resolves to before any HAL work happens. Pure, so
+    /// "can this be skipped?" is answerable in a test on a machine with no
+    /// audio hardware at all.
+    enum RebuildPlan: Equatable {
+        /// Nothing to do, carrying the line for the log.
+        case skip(reason: String)
+        /// Too soon after the last build: coalesce into one scheduled rebuild.
+        case debounce
+        case build
+    }
+
+    /// Decide what a notification does, given what it resolves to.
+    ///
+    /// The rule that matters: a *device change* is never answered by comparing
+    /// against `last`. `last` was resolved against the device that has just gone
+    /// away, and a tap left bound to a replaced output delivers buffers full of
+    /// zeros - alive, healthy, `isCapturing` true, RMS permanently 0.0000, so it
+    /// wins every vote in the engine and Auto-Pause silently never pauses. A
+    /// log full of "rebuild skipped (device change): targets unchanged" next to
+    /// a live-but-silent tap is not a coincidence, it is the whole bug.
+    ///
+    /// The comparison is kept for the notifications it is valid for: process
+    /// churn, where the same ids really do mean the same thing, and the
+    /// aggregate we build ourselves, which is not a device change at all (see
+    /// `deviceListChanged()`).
+    static func plan(
+        reason: RebuildReason,
+        last: TapTargets?,
+        resolved: TapTargets,
+        force: Bool,
+        sinceLastBuild: TimeInterval?,
+        debounce: TimeInterval
+    ) -> RebuildPlan {
+        func tooSoon() -> Bool {
+            guard let sinceLastBuild, !force else { return false }
+            return sinceLastBuild < debounce
+        }
+        switch reason {
+        case .deviceChange:
+            return tooSoon() ? .debounce : .build
+        case .config, .processChange, .afterTeardown:
+            if let last, last == resolved, !force { return .skip(reason: "targets unchanged") }
+            return tooSoon() ? .debounce : .build
+        case .start, .wake, .retry:
+            return tooSoon() ? .debounce : .build
+        }
+    }
+
+    /// Rebuild unless debounced away. Process notifications only rebuild when
+    /// the resolved targets actually changed; a device change always does, and
+    /// `plan(reason:...)` says why.
+    private func rebuildIfNeeded(reason: RebuildReason, force: Bool = false) {
         guard running else { return }
         // Never build on top of a device that is still being torn down: the
         // ids can be recycled by the HAL and the two would interleave.
@@ -609,34 +698,56 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
                 > Self.teardownWatchdog
             {
                 onDiagnostic?(
-                    "teardown still in flight after \(Int(Self.teardownWatchdog))s (\(reason)): building anyway"
+                    "teardown still in flight after \(Int(Self.teardownWatchdog))s (\(reason.rawValue)): building anyway"
                 )
                 tearingDown = false
                 teardownStartedAt = nil
             } else {
                 rebuildPending = true
-                onDiagnostic?("rebuild deferred (\(reason)): teardown in flight")
+                onDiagnostic?("rebuild deferred (\(reason.rawValue)): teardown in flight")
                 return
             }
         }
         let wanted = resolveTapTargets()
-        if !force, wanted == lastTargets {
-            onDiagnostic?("rebuild skipped (\(reason)): targets unchanged")
+        let plan = Self.plan(
+            reason: reason,
+            last: lastTargets,
+            resolved: wanted,
+            force: force,
+            sinceLastBuild: Date().timeIntervalSince(lastBuildAt),
+            debounce: rebuildDebounce
+        )
+        switch plan {
+        case .skip(let why):
+            onDiagnostic?("rebuild skipped (\(reason.rawValue)): \(why)")
             return
-        }
-        let now = Date()
-        if !force, now.timeIntervalSince(lastBuildAt) < rebuildDebounce {
+        case .debounce:
             guard !rebuildScheduled else { return }
             rebuildScheduled = true
+            let coalesced = reason
             queue.asyncAfter(deadline: .now() + rebuildDebounce) { [weak self] in
                 guard let self else { return }
                 self.rebuildScheduled = false
-                self.rebuildIfNeeded(reason: "debounced \(reason)")
+                // Forced, and keeping the reason it was coalesced under so the
+                // log still says what the build was *for*. Not forced because
+                // by the time the delay is up the notification that asked has
+                // already been answered, and its "targets unchanged" answer no
+                // longer describes anything: waiting for another notification to
+                // arrive is how a device change gets dropped entirely.
+                self.rebuildIfNeeded(reason: coalesced, force: true)
             }
             return
+        case .build:
+            break
         }
-        lastBuildAt = now
+        lastBuildAt = Date()
         lastTargets = wanted
+        // Whatever is running now is about to be replaced, so whatever verified
+        // it no longer describes anything. Say so, and let the engine ask for
+        // proof again once the new tap starts delivering: a "verified once, at
+        // launch" line is exactly what let a tap that went silent on a device
+        // change keep its clean bill of health for the rest of the session.
+        setStatus(.starting)
         tearDownTap()
         setRebuilding(true)
         defer { setRebuilding(false) }
@@ -645,8 +756,8 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
             retryDelay = 5
             retryAttempts = 0
         } catch {
-            onDiagnostic?("build failed (\(reason)): \(error)")
-            setStatus(.unavailable(reason: "\(reason): \(error)"))
+            onDiagnostic?("build failed (\(reason.rawValue)): \(error)")
+            setStatus(.unavailable(reason: "\(reason.rawValue): \(error)"))
             // A failed build has usually already started an async teardown, so
             // ask for the rebuild to be re-run once that teardown lands instead
             // of building on top of a device the HAL is still destroying.
@@ -686,7 +797,7 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
             self.retryScheduled = false
             guard self.running else { return }
             if case .unavailable = self.status {
-                self.rebuildIfNeeded(reason: "retry after unavailable", force: true)
+                self.rebuildIfNeeded(reason: .retry, force: true)
             }
         }
     }
@@ -694,7 +805,7 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
     /// What the tap should capture, resolved from bundle rules to Core Audio
     /// process object IDs (bundleIDs property needs macOS 26; object IDs
     /// work on macOS 15).
-    private struct TapTargets: Equatable {
+    struct TapTargets: Equatable {
         /// Empty object list + exclusive == global tap minus exclusions.
         var excludedObjectIDs: [AudioObjectID]
         /// Non-empty == mixdown of exactly these processes.
@@ -711,6 +822,24 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
         /// excludes something it should not goes completely silent rather than
         /// failing, so this has to be visible.
         var excludedSummary: String
+
+        /// Identity is what changes *what the tap captures*, and only that.
+        ///
+        /// Hand-written rather than synthesized because `excludedSummary` is a
+        /// log line, not a target. It was part of the identity until this was
+        /// noticed in the field: coreaudiod hands out process object IDs for
+        /// processes that no longer exist and then reuses them, so a
+        /// `skip-stale(131)` note appeared and vanished every few seconds — and
+        /// because that note was in the string, the tap was torn down and
+        /// rebuilt from scratch every few seconds, with the engine holding every
+        /// decision for the second or two each rebuild took. The object IDs were
+        /// identical throughout; only the sentence describing them had changed.
+        static func == (lhs: TapTargets, rhs: TapTargets) -> Bool {
+            lhs.excludedObjectIDs == rhs.excludedObjectIDs
+                && lhs.includedObjectIDs == rhs.includedObjectIDs
+                && lhs.exclusive == rhs.exclusive
+                && lhs.outputDeviceUID == rhs.outputDeviceUID
+        }
     }
 
     private func resolveTapTargets() -> TapTargets {
@@ -969,6 +1098,12 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
             throw TapError.aggregate(st)
         }
         aggregateID = agg
+        // So the notification this very call triggers is recognisable as ours.
+        // The tap id goes in too: whether a process tap registers in the device
+        // list is not something to bet a rebuild loop on. An id that never
+        // turns up is pruned on the next diff.
+        ownedDeviceIDs.insert(tapID)
+        ownedDeviceIDs.insert(agg)
 
         // Read the format the HAL actually settled on instead of assuming
         // Float32 stereo, and fail loudly (and specifically) when the aggregate
@@ -1023,6 +1158,20 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
             throw TapError.starved(detail)
         }
         setStatus(.active(rms: 0))
+        // `confirmAudioIsFlowing` only proves buffers *arrive*. A tap bound to an
+        // output that has been swapped out delivers them full of zeros, which
+        // passes that check and then never once crosses the threshold - so the
+        // verdict that matters is re-established here, on every build, and the
+        // measured level goes in the log as the proof. See `reportCaptureHealth`.
+        beginVerification(of: deviceUID)
+    }
+
+    /// Open the window in which a freshly built tap has to prove it carries
+    /// sound, not just buffers. Cleared by the verdict, or by the teardown that
+    /// replaced the tap it was about.
+    private func beginVerification(of deviceUID: String) {
+        verifyStartedAt = Date()
+        verifyDeviceUID = deviceUID
     }
 
     private static func describe(_ format: TapAudioFormat) -> String {
@@ -1162,6 +1311,10 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
         _format = nil
         _lastPeak = 0
         lock.unlock()
+        // The tap that is going away cannot be the one a fresh verification is
+        // about, and the new build opens its own.
+        verifyStartedAt = nil
+        verifyDeviceUID = nil
 
         guard proc != nil || aggregate != 0 || tap != 0 else { return }
 
@@ -1170,6 +1323,12 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
         // (observed live, macOS 27), and doing that inline froze the detector
         // permanently - no rebuild, no recovery, ever. Serialised on its own
         // queue and never waited on, so the tap can come back.
+        //
+        // The id is remembered first: the removal notification is posted from
+        // `releaseHAL` below, and if it were not in `ownedDeviceIDs` by then it
+        // would read as the user unplugging something.
+        if aggregate != 0 { ownedDeviceIDs.insert(aggregate) }
+        if tap != 0 { ownedDeviceIDs.insert(tap) }
         tearingDown = true
         teardownStartedAt = Date()
         teardownQueue.async { [weak self] in
@@ -1180,7 +1339,7 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
                 self.teardownStartedAt = nil
                 if self.rebuildPending {
                     self.rebuildPending = false
-                    self.rebuildIfNeeded(reason: "after teardown")
+                    self.rebuildIfNeeded(reason: .afterTeardown)
                 }
             }
         }
@@ -1309,6 +1468,46 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
             )
         }
         let now = Date()
+        if let started = verifyStartedAt, now.timeIntervalSince(started) >= Self.verifyWindow {
+            verifyStartedAt = nil
+            let output = verifyDeviceUID ?? "unknown output"
+            verifyDeviceUID = nil
+            if !capturing {
+                // Cannot happen through `buildTap` (it waits for buffers), so
+                // this is a tap that died after passing its build check. Named
+                // here because the engine will quietly hand the vote to poll.
+                onDiagnostic?(
+                    "tap verification failed: no buffers \(String(format: "%.0fs", now.timeIntervalSince(started))) "
+                        + "after a rebuild (output \(output))"
+                )
+                loggedSilence = false
+            } else if peak > Self.audibleFloor {
+                // The line the smoke script and the README look for, now
+                // repeated once per build with the measured level in it, so
+                // "detection is working" is a number in the log rather than a
+                // memory carried over from launch.
+                loggedSilence = false
+                onDiagnostic?(
+                    "tap verified: RMS \(String(format: "%.4f", rms)) peak \(String(format: "%.4f", peak)) "
+                        + "after this build (output \(output))"
+                )
+            } else if !loggedSilence {
+                // Every sample is zero, which is only a *fault* if something
+                // other than Spotify was making sound: Spotify is excluded from
+                // the tap on purpose (it is the thing being ducked), so a room
+                // where only Spotify is playing correctly measures 0.0000. The
+                // line therefore states the measurement and the condition rather
+                // than declaring a failure, and it is logged once per silent
+                // stretch instead of once per rebuild — the rebuilds are frequent
+                // and the bounded log is not.
+                loggedSilence = true
+                onDiagnostic?(
+                    "tap measuring silence: rms \(String(format: "%.4f", rms)) peak \(String(format: "%.4f", peak)) "
+                        + "for \(Int(Self.verifyWindow))s after this build (output \(output)) — "
+                        + "expected while nothing but Spotify is playing"
+                )
+            }
+        }
         if now.timeIntervalSince(lastHealthReport) > Self.healthReportInterval {
             lastHealthReport = now
             let aggregate = aggregateID
@@ -1326,10 +1525,71 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
 
     // MARK: - Rebuild triggers
 
+    /// A device-list notification, sorted into "the user changed the hardware"
+    /// and "coreaudiod is telling us about our own aggregate".
+    ///
+    /// Building an aggregate adds a device and releasing one removes it, and
+    /// both post this notification — so the naive reading of every one of them
+    /// as a device change rebuilds the tap forever. The old code avoided that
+    /// by comparing resolved targets, which is what made a *real* device change
+    /// get skipped: the comparison was against a resolution made for the device
+    /// that had just gone away.
+    ///
+    /// So the two cases are separated by the only thing that actually
+    /// distinguishes them, which is *which* device changed. A diff of the device
+    /// list that contains nothing but ids this detector created or is about to
+    /// destroy is our own bookkeeping; anything else is the user's hardware and
+    /// gets a rebuild. No timers, no guessing, no way for a real change to be
+    /// mistaken for our own.
+    private func deviceListChanged() {
+        let current = Self.deviceIDs()
+        let changed = current.symmetricDifference(knownDeviceIDs)
+        knownDeviceIDs = current
+        guard running else {
+            ownedDeviceIDs.formIntersection(current)
+            return
+        }
+        let foreign = changed.subtracting(ownedDeviceIDs)
+        // Forget ids that no longer exist, so "ours" cannot accumulate forever
+        // and eventually swallow a real change.
+        ownedDeviceIDs.formIntersection(current)
+        guard !changed.isEmpty else { return }
+        guard !foreign.isEmpty else {
+            onDiagnostic?("device change ignored: our own aggregate only")
+            return
+        }
+        onDiagnostic?(
+            "device change: \(foreign.count) device(s) changed, re-resolving targets"
+        )
+        rebuildIfNeeded(reason: .deviceChange)
+    }
+
+    /// Every device the HAL currently knows about.
+    private static func deviceIDs() -> Set<AudioObjectID> {
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var size: UInt32 = 0
+        let system = AudioObjectID(kAudioObjectSystemObject)
+        guard AudioObjectGetPropertyDataSize(system, &addr, 0, nil, &size) == noErr
+        else { return [] }
+        var ids = [AudioObjectID](
+            repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
+        guard AudioObjectGetPropertyData(system, &addr, 0, nil, &size, &ids) == noErr
+        else { return [] }
+        return Set(ids)
+    }
+
     private func installSystemListeners() {
         queue.async { [weak self] in
             guard let self, !self.listenersInstalled else { return }
             self.listenersInstalled = true
+            // Seeded before the listener is attached, so the first notification
+            // is diffed against reality rather than against an empty set (which
+            // would look like every device on the machine just appeared).
+            self.knownDeviceIDs = Self.deviceIDs()
             let sys = AudioObjectID(kAudioObjectSystemObject)
             var dev = AudioObjectPropertyAddress(
                 mSelector: kAudioHardwarePropertyDevices,
@@ -1338,7 +1598,7 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
             )
             AudioObjectAddPropertyListenerBlock(sys, &dev, self.queue) { [weak self] _, _ in
                 guard let self else { return }
-                self.queue.async { self.rebuildIfNeeded(reason: "device change") }
+                self.queue.async { self.deviceListChanged() }
             }
             var procs = AudioObjectPropertyAddress(
                 mSelector: kAudioHardwarePropertyProcessObjectList,
@@ -1347,7 +1607,7 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
             )
             AudioObjectAddPropertyListenerBlock(sys, &procs, self.queue) { [weak self] _, _ in
                 guard let self else { return }
-                self.queue.async { self.rebuildIfNeeded(reason: "process change") }
+                self.queue.async { self.rebuildIfNeeded(reason: .processChange) }
             }
         }
         let center = NSWorkspace.shared.notificationCenter
@@ -1358,7 +1618,7 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
             },
             center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: nil) { [weak self] _ in
                 guard let self else { return }
-                self.queue.async { self.rebuildIfNeeded(reason: "wake", force: true) }
+                self.queue.async { self.rebuildIfNeeded(reason: .wake, force: true) }
             },
         ]
     }

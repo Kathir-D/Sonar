@@ -275,6 +275,7 @@ struct AutoPausePreferencesView: View {
     /// A button that quietly does nothing is worse than no button at all.
     private func permissionRow(_ permission: SonarPermission) -> some View {
         let state = stateToShow(for: permission)
+        let waiting = permissions.isRequesting(permission)
         return HStack(alignment: .top, spacing: 10) {
             permissionIcon(state)
                 .foregroundStyle(dotColor(for: state))
@@ -285,10 +286,20 @@ struct AutoPausePreferencesView: View {
                     .font(.caption)
                     .foregroundStyle(dotColor(for: state))
                     .fixedSize(horizontal: false, vertical: true)
+                if waiting {
+                    Text("Waiting for the system dialog to be answered…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer(minLength: 8)
             if let actionTitle = actionTitle(for: state) {
                 Button(actionTitle) { permissionAction(for: permission, state: state) }
+                    // A second "Grant…" while the first dialog is up would open a
+                    // second one on top of it. The row already says what it is
+                    // waiting for, so the button is honest about being unusable
+                    // rather than opening a dialog nobody asked for.
+                    .disabled(waiting)
             }
         }
         .padding(.vertical, 2)
@@ -297,8 +308,15 @@ struct AutoPausePreferencesView: View {
     /// The grant is only half the truth for system audio: a granted app whose
     /// tap delivers nothing still cannot hear anything. Only worth saying while
     /// Auto-Pause is on, because nothing runs a tap while it is off.
+    ///
+    /// A request in flight deliberately does *not* blank the state any more. It
+    /// used to report `.unknown` for the duration, and since the state is only
+    /// cleared by the request's own completion, a dialog that was never
+    /// answered left the row reading "Checking…" for the rest of the session:
+    /// an in-flight request and a state nobody has read yet were the same thing,
+    /// so a user with a real permission problem was shown no way out of it.
+    /// The state is real, the wait is a separate caption, and both end.
     private func stateToShow(for permission: SonarPermission) -> SonarPermissionState {
-        if permissions.isRequesting(permission) { return .unknown }
         let state = permissions.state(for: permission)
         if permission == .screenRecording, state == .granted, model.enabled,
             !host.tapIsOperational
@@ -308,13 +326,27 @@ struct AutoPausePreferencesView: View {
         return state
     }
 
+    /// True when the Automation row is `.blocked` because macOS stopped
+    /// answering, rather than because it said no.
+    ///
+    /// The two are indistinguishable from the state alone — both are
+    /// `.blocked` — and the difference decides both the wording and whether a
+    /// "Grant…" button could ever work. See `SonarPermissions.automationCheckIsWedged`.
+    private var automationCheckIsWedged: Bool {
+        permissions.automationCheckIsWedged
+    }
+
     private func stateText(
         for permission: SonarPermission,
         state: SonarPermissionState
     ) -> String {
         switch state {
         case .unknown:
-            return "Checking…"
+            // Never "Checking…": there is nothing left to wait for. The read did
+            // not come back, so say that much, name what the grant is for, and
+            // leave the retry on the row — a spinner with no button is a dead
+            // end, and this is a permission the user can fix in System Settings.
+            return "Sonar couldn't read this. It needs this to \(permission.effect)."
         case .granted:
             return "Granted. Sonar can \(permission.effect)."
         case .tapSilent:
@@ -322,14 +354,26 @@ struct AutoPausePreferencesView: View {
         case .needsGrant:
             return "Not granted. Sonar needs this to \(permission.effect)."
         case .blocked:
-            return "Turned off. Sonar needs this to \(permission.effect)."
-    case .targetNotRunning:
-        // Apple Events cannot prompt about an app that is not running, so this
-        // state has no "Grant…" button - only a re-check. Naming the thing to do
-        // next matters, because otherwise the row looks identical to "granted but
-        // nothing works" and a user has no reason to start Spotify.
-        return "Spotify isn't running, so Sonar can't ask yet. Start Spotify, then Re-check."
-    }
+            // Two different things land here, and they need different words.
+            // The refusal case is the OS saying no. The wedged case is the OS
+            // not answering at all: on macOS 27 with Spotify 1.3.1.234,
+            // `AEDeterminePermissionToAutomateTarget` never returns, so there
+            // is no prompt to show and no "Grant…" that could ever work —
+            // saying "Turned off" there sends someone to check a switch that
+            // macOS is not reading. Naming the difference is the only thing
+            // that keeps this from being a dead end with a button on it.
+            return permission == .automation && automationCheckIsWedged
+                ? "macOS won't answer when Sonar asks about this, so the prompt "
+                    + "can't be shown. Turn it on in System Settings › Privacy & "
+                    + "Security › Automation, listed under Sonar."
+                : "Turned off. Sonar needs this to \(permission.effect)."
+        case .targetNotRunning:
+            // Apple Events cannot prompt about an app that is not running, so this
+            // state has no "Grant…" button - only a re-check. Naming the thing to do
+            // next matters, because otherwise the row looks identical to "granted but
+            // nothing works" and a user has no reason to start Spotify.
+            return "Spotify isn't running, so Sonar can't ask yet. Start Spotify, then Re-check."
+        }
     }
 
     private func permissionAction(
@@ -338,7 +382,10 @@ struct AutoPausePreferencesView: View {
     ) {
         switch state {
         case .unknown:
-            break
+            // The only action a row with no answer can offer. Everything else
+            // about the state is unknown, so re-read it and let the poll carry
+            // on from there.
+            recheck()
         case .granted, .targetNotRunning:
             recheck()
         case .tapSilent:
@@ -351,17 +398,22 @@ struct AutoPausePreferencesView: View {
     }
 
     /// The label always names what the button will do next, so there is no
-    /// state where it can promise the wrong thing.
+    /// state where it can promise the wrong thing — and every state has one, so
+    /// no row is ever a dead end.
     private func actionTitle(for state: SonarPermissionState) -> String? {
         switch state {
         case .unknown:
-            return nil
+            return "Re-check"
         case .granted, .targetNotRunning:
             return "Re-check"
         case .tapSilent:
             return "Try again"
         case .needsGrant:
-            return "Grant…"
+            // A prompt macOS has already refused to raise. Pressing "Grant…"
+            // would sit there for a minute and then admit nothing happened,
+            // which is the worst thing a button can do. `request(_:)` routes
+            // this to System Settings as well, so the two cannot disagree.
+            return automationCheckIsWedged ? "Open System Settings" : "Grant…"
         case .blocked:
             return "Open System Settings"
         }

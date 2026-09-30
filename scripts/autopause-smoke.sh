@@ -646,6 +646,18 @@ await_engine() {
     # The tap only counts once it is carrying audio; that flips the log line.
     _deadline=$(( $(now_ms) + SETTLE_SECONDS * 1000 ))
     while [ "$(now_ms)" -lt "$_deadline" ]; do
+        # Buffers arriving with every sample at 0.0000 is only a fault if
+        # something other than Spotify was making sound - Spotify is excluded
+        # from the tap on purpose, so this run's tone (afplay) is the thing that
+        # should be showing up in the numbers. Checked first because it is the
+        # verdict that looks healthy everywhere else in the log.
+        if log_since "$_from" | grep -q 'tap measuring silence'; then
+            warn "Log says 'tap measuring silence' — the tap is capturing buffers"
+            warn "that are all 0.0000. Correct while nothing but Spotify plays; a"
+            warn "fault the moment the tone below is playing, because afplay is not"
+            warn "excluded. So the tap is bound to an output it is not really reading."
+            return 0
+        fi
         if log_since "$_from" | grep -q 'tap verified'; then
             note "Tap verified: RMS loudness is driving the decisions."
             return 0
@@ -1281,7 +1293,13 @@ if [ "$SKIP_LOG" -eq 0 ]; then
         log_since 0 | grep -E 'candidate:|ducked:|restored|relinquished:|tap |engine started|permissions:' \
             | tail -n "$LOG_MAX_LINES" | sed 's/^/    /' || note "    (no engine lines in the log yet)"
         say ""
-        if log_since "${LOG_BASE:-0}" | grep -q 'tap verified'; then
+        if log_since "${LOG_BASE:-0}" | grep -q 'tap measuring silence'; then
+            say "Detector that drove this run: ${C_BOLD}the Core Audio tap, measuring nothing${C_RESET}."
+            say "Buffers arrive and every sample is 0.0000. If the tone was playing"
+            say "while this was logged, the tap is bound to an output device it is not"
+            say "really reading — check the 'output …' on that line, and try a"
+            say "different output device."
+        elif log_since "${LOG_BASE:-0}" | grep -q 'tap verified'; then
             say "Detector that drove this run: ${C_BOLD}the Core Audio tap${C_RESET} (RMS, real loudness)."
         elif log_since "${LOG_BASE:-0}" | grep -Eq 'tap unavailable|tap ready'; then
             say "Detector that drove this run: ${C_YELLOW}process polling only${C_RESET}."

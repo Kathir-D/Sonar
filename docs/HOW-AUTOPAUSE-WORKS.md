@@ -322,6 +322,82 @@ failure, not as active — it tears down, hands detection to poll, and schedules
 The status also does not notify on RMS (§2), so `.active` is a one-off transition, not a
 90 Hz stream.
 
+### Which notifications rebuild, and why a device change never consults the cache
+
+`TapDetector.plan(reason:last:resolved:force:sinceLastBuild:debounce:)` decides, and it is
+a pure function so the rule is testable (`TapRebuildPlanTests.swift`). The rule:
+
+- **A device change always rebuilds.** It does not compare `resolved` against `last`. That
+  cache was resolved against the device that has just gone away, so it is not evidence
+  about the new one — and getting this wrong is the worst outcome available, because it
+  is a healthy tap: coreaudiod keeps delivering buffers, so `isCapturing` is true, the
+  status is `.active`, the heartbeat is clean, and every sample is `0.0000`. The tap then
+  wins every vote in the engine and Auto-Pause silently never pauses. Field report: 39
+  `rebuild skipped (device change): targets unchanged` lines in the same window as a
+  permanent `rms=0.0000`. `outputDeviceUID` being part of `TapTargets` (§2) covers the
+  common case; it cannot cover a device-list change that leaves the resolved targets
+  byte-identical, which is the case above.
+- **Our own aggregate is not a device change.** Building one adds a device and releasing
+  one removes it, and both post `kAudioHardwarePropertyDevices`, so treating every
+  notification as a real change rebuilds forever. `deviceListChanged()` diffs the device
+  list against the last one seen and ignores a diff that consists only of ids this
+  detector created or is releasing. Identity, not a timer.
+- **Everything else keeps the comparison.** Process-list churn republishes constantly, and
+  rebuilding a working tap on each notification would drop detection for a second or two
+  every time. Same ids really do mean the same thing there.
+- **A coalesced rebuild is forced** and keeps the reason it was coalesced under, so the
+  log still says what the build was for. Waiting for another notification to arrive is
+  how a device change gets dropped entirely.
+
+### The tap is re-verified after every rebuild, not once at launch
+
+`beginVerification(of:)` is called at the end of every successful `buildTap`, and
+`reportCaptureHealth` closes the window `verifyWindow` (5 s) later with one of three
+verdicts:
+
+- `tap verified: RMS 0.1832 peak 0.7410 after this build (output …)` — a real level, in
+  the log, on every build. This is the line the README and the smoke script look for, and
+  it now carries the proof instead of asserting a memory of launch.
+- `tap measuring silence: rms 0.0000 peak 0.0000 for 5s after this build (output …)` —
+  buffers arriving with zeros. **This is not automatically a fault**: Spotify is excluded
+  from the tap on purpose (`PollDetector.excludedBundleIDs`, §2), because it is the thing
+  being ducked, so a room where only Spotify is playing correctly measures 0.0000. It
+  becomes a fault the moment something *else* makes sound. Logged once per silent stretch
+  rather than once per rebuild, because the rebuilds are frequent and the log is capped.
+- `tap verification failed: no buffers …` — a tap that died after passing its build check.
+
+`confirmAudioIsFlowing` only proves buffers *arrive*; a tap bound to a replaced output
+arrives with zeros, so it cannot be the whole check. The engine side is symmetric:
+`AutoPauseController.tapStatusChanged(.starting)` clears `tapHasAudibleSignal`, so every
+rebuild re-earns the `.tapVerified` event instead of inheriting it.
+
+The engine's *vote* is deliberately still `isCapturing` and not `lastPeak > 0`
+(audit §3b suggests otherwise). Gating on a non-zero sample would hand every decision to
+poll for as long as the room is quiet, and poll cannot tell silence from sound — it would
+report a paused video as loud. A quiet room has to be a decision the tap is allowed to
+make.
+
+### A log sentence is not a target
+
+`TapTargets.==` is hand-written to compare the four fields that decide what the tap
+captures — the excluded ids, the included ids, exclusivity and the output UID — and
+deliberately **not** `excludedSummary`, which is a log line.
+
+It was part of the synthesized identity, and the field log shows what that cost: coreaudiod
+keeps process object ids for processes that have already exited and hands out new ones as
+they come and go, so the resolver logged
+
+```
+tap: targets: skip-stale(98), skip-stale(115), com.spotify.client(119), self(120), skip-stale(131)
+tap: targets: skip-stale(98), skip-stale(115), com.spotify.client(119), self(120), skip-stale(138)
+```
+
+a few seconds apart, and every one of them tore the tap down and rebuilt it from scratch,
+with the engine **holding** every decision for the second or two each rebuild took. The
+object ids never changed; only the sentence describing them had. Skipping a rebuild on a
+device change (§ above) and rebuilding on a `skip-stale` note are the same class of mistake
+in opposite directions: letting a string stand in for a fact about the tap.
+
 ### The tap answers "is it loud right now"; fusion owns the dwell
 
 This split was wrong at first and is now load-bearing.

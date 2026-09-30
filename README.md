@@ -512,6 +512,15 @@ Audio Recording** for the loudness tap, and **Automation** for `com.spotify.clie
 Sonar, or under the terminal you launched from if you built Sonar from source. Toggle each one off
 and on again to force macOS to re-evaluate it, then press *Re-check*.
 
+**If the Automation row says macOS won't answer.** On macOS 27 with Spotify 1.3.1.234,
+`AEDeterminePermissionToAutomateTarget` does not return at all — not with `askUserIfNeeded: true`,
+and not with `false` either, which is documented never to prompt. `tccd` refuses the request with
+*unable to compute designated requirement* for Spotify's binary, and the caller waits forever. So
+the row cannot be read, and the prompt cannot be raised either: a real Apple Event send times out
+with no dialog on screen. Sonar detects this, says so in as many words, and offers **Open System
+Settings** rather than a *Grant…* button that could not work. Switching the permission on in System
+Settings is the only route on such a machine.
+
 Sonar is sandboxed (see `Sonar/Sonar.entitlements`) and asks for nothing else — no Accessibility,
 no Full Disk Access, no microphone. Its only entitlements beyond the sandbox are Apple Events to
 `com.spotify.client` and network access for Spotify login, which is why the log lives inside the
@@ -696,6 +705,14 @@ than guessing, because which of the two applies depends on how the app was built
 The lines worth reading are `engine started`, `tap verified:` / `tap unavailable:` (which detector
 is driving), `candidate:`, `ducked:`, `restored`, and `relinquished:` (why Sonar handed playback
 back instead of resuming it).
+
+`tap verified:` is re-checked after every rebuild and carries the measured level, so a healthy tap
+always has a recent number next to it. If you see `tap measuring silence` instead, the tap is
+receiving buffers whose samples are all `0.0000` — which is correct while nothing but Spotify is
+playing, because Spotify is deliberately excluded from the tap (it is the thing being ducked). It
+is a fault the moment *another* app is making sound, and the usual cause is an output device that
+changed underneath the tap. Sonar rebuilds the tap when the hardware list changes and says so on a
+`device change:` line; the new tap then has to prove itself again within a few seconds.
 </details>
 
 [⬆ Back to top](#sonar)

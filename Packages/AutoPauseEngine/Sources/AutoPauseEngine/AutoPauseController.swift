@@ -95,9 +95,14 @@ public final class AutoPauseController: @unchecked Sendable {
     /// carries buffers. Poll drives decisions until then and is the permanent
     /// fallback when the tap is unavailable.
     ///
-    /// A rebuild in between does *not* clear it: for the second or two a rebuild
-    /// takes there is no evidence either way, and `.tapVerified` re-announcing
-    /// itself every time the tap rebuilt was one log line per rebuild.
+    /// Cleared by `.starting`, which is now published on *every* rebuild and not
+    /// only on the first one. It used to survive a rebuild, on the grounds that
+    /// `.tapVerified` re-announcing itself every time the tap rebuilt was one log
+    /// line per rebuild — but a verification that is never re-established is not
+    /// a verification, it is a launch-time memory: a tap that measured real
+    /// loudness, then went silent when the output device changed underneath it,
+    /// kept its clean bill of health and kept every decision for the rest of the
+    /// session. One line per rebuild is the right price for that being visible.
     private var tapHasAudibleSignal = false
     /// Observation from `NSApplication.willTerminateNotification`, so quitting
     /// while ducked does not leave Spotify paused with nothing scheduled to
@@ -323,6 +328,10 @@ public final class AutoPauseController: @unchecked Sendable {
             onEvent?(.tapReady)
         case .starting:
             tapIsUsable = true
+            // A rebuild is in progress, so the tap that was verified is being
+            // replaced: the verdict has to be earned again by whatever comes
+            // back, not inherited by it.
+            tapHasAudibleSignal = false
         case .idle:
             break
         }

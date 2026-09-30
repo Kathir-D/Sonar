@@ -77,6 +77,80 @@ run off the main thread; only publishing hops back.
 - **Live:** 1 s poll plus `NSApplication.didBecomeActiveNotification`, both started and
   stopped with the pane's `onAppear`/`onDisappear`.
 
+**Every wait has a deadline, because a system dialog can be dismissed without an answer — and on
+this OS the Automation check never answers at all.** `AEDeterminePermissionToAutomateTarget`
+blocks until somebody answers it, and the process can be killed while it is up. A "request in
+flight" flag cleared only by the request's own completion therefore outlives everything it
+describes, and because the row reported `.unknown` for the duration, the Automation row read
+*Checking…* for the rest of the session with no button — no Grant, no way forward, and Auto-Pause
+that could never be switched on.
+
+Measured on macOS 27 with Spotify 1.3.1.234 (2026-09-29), which is worse than a dialog that can be
+dismissed: **`AEDeterminePermissionToAutomateTarget` does not return at all.** Not with
+`askUserIfNeeded: true`, and not with `false` either, which is documented never to prompt.
+`com.apple.finder` answers `-1744` in 0.06 s; `com.spotify.client` blocks on a dispatch semaphore
+with no thread left to service it, reproducibly. tccd gives the reason once in its own log:
+
+```
+internal_TCCCreateDesignatedRequirementIdentityFromMessage: Refusing TCCAccessRequestIndirect
+(kTCCServiceAppleEvents) accessing={com.spotify.client} : unable to compute designated
+requirement for: file:///Applications/Spotify.app/Contents/MacOS/Spotify.
+```
+
+Spotify's own signature verifies and satisfies its designated requirement, so this is macOS
+failing to compute one for that binary — not a damaged install, and not something the app can fix.
+Two consequences the pane has to live with: the Automation row can never be *read*, and the prompt
+can never be *raised* (a real Apple Event send times out `-1712` with no dialog on screen, verified
+with a replica of Sonar's own signature and entitlements). So a `Grant…` button on this machine
+cannot work, and offering one is a button that lies.
+
+What `SonarPermissions` does about it:
+
+- **The two permissions are read separately.** They were one serial batch, so the screen-recording
+  answer — which comes back in microseconds — was never published, because the Automation call had
+  not returned. That is why the shipped log says `preflight says unknown` for hours on a machine
+  whose tap was working. Each now has its own ledger entry and its own pass through the queue.
+- **A read that times out is not retried.** A deadline has to stop the retrying, not merely let the
+  next one start: the poll fired every second, each tick started a fresh read behind the wedged one,
+  and 14 calls were started with 0 finished in 14 seconds, each holding a thread. The retry waits
+  for the app to become active again — the usual reason to be there is a trip to System Settings, so
+  a grant made there is seen on the next read.
+- **Each read watches its own deadline**, rather than relying on the pane's 1 s poll. Two gaps there,
+  both found by running the built app rather than by reading it: the sweep that notices a wedged
+  read only ran while the preferences pane existed, so with the pane closed the row went back to
+  "Checking…" forever; and the watcher itself was a `Timer`, which — created from the background
+  thread that discovers the need for it — is added to **no run loop and never fires**. Measured, all
+  three from a background thread: `Timer(timeInterval:)` never fired,
+  `Timer.scheduledTimer(withTimeInterval:)` never fired, `DispatchQueue.main.asyncAfter` fired. The
+  watchers are main-queue work items now.
+- **A wedged Automation check publishes `.blocked`**, and `automationCheckIsWedged` lets the row
+  say what `.blocked` alone cannot: *"macOS won't answer when Sonar asks about this, so the prompt
+  can't be shown."* `needsGrant` is never published in that state, so `Grant…` is never offered,
+  and `request(_:)` routes a wedged permission to System Settings rather than waiting a minute for
+  a dialog that will not come.
+- Waits otherwise go through `InFlightLedger`, which can only be left by an answer (`finish`) or a
+  deadline (`expire(at:)`). Deadlines: `InFlightTimeout.probe` = 3 s for a read,
+  `InFlightTimeout.grantRequest` = 60 s for a request, `InFlightTimeout.wedgedReadRetry` = 60 s.
+  Grant requests have their own queue, so a wedged dialog cannot hold up the reads behind it.
+- `stateToShow` no longer reports `.unknown` while a request is in flight. The state is reported as
+  it is, the wait is a separate caption, and the button is disabled while the dialog is up.
+  `.unknown` itself says *"Sonar couldn't read this"* and offers **Re-check** — there is no state in
+  this row that renders a spinner with no action.
+
+Verified against the built app on the affected machine, preferences pane closed:
+
+```
+permissions: screenRecording=needsGrant automation=unknown
+permissions: the Automation check did not answer within 3s; treating it as unavailable and not retrying it on the poll
+permissions: screenRecording=needsGrant automation=blocked
+```
+
+One attempt, one held thread, no growth — checked twice a minute apart.
+
+**Still one thing only a person can do:** the grant is only real once it is switched on in System
+Settings › Privacy & Security › **Automation**. Everything above is about Sonar not stranding the
+user, and not pretending a button works, when that does not happen.
+
 **`-600` not blocking is a deliberate call.** There is no grant to make, a Spotify-only
 feature has nothing to act on while Spotify is closed, and the next poll settles it either
 way. If you disagree, the single place to change is `SonarPermissions.canEnable`.
