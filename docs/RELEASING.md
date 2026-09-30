@@ -25,7 +25,7 @@ maintaining their own tap of unsigned software.
 
 | | Status |
 | --- | --- |
-| Engine test suite | 296 tests, green. No hardware, no permission, no audio needed |
+| Engine test suite | 311 tests, green. No hardware, no permission, no audio needed |
 | App build | `xcodebuild` clean, no new warnings |
 | End-to-end behaviour | `scripts/autopause-smoke.sh`: pause in **486 ms**, resume in **482 ms**, Instant preset, against a real tone through the real output device |
 | A curl-fetched build installs | Fetched over HTTP, unzipped, installed, launched; the Core Audio tap came up and drove a real duck. No quarantine, so no Gatekeeper |

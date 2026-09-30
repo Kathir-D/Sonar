@@ -18,7 +18,7 @@
 <p align="center">
   <a href="https://github.com/Kathir-D/Sonar/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Kathir-D/Sonar/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/Kathir-D/Sonar/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/Kathir-D/Sonar?include_prereleases&label=release"></a>
-  <img alt="version 0.1.4" src="https://img.shields.io/badge/version-0.1.4-5BCEFA">
+  <img alt="version 0.1.5" src="https://img.shields.io/badge/version-0.1.5-5BCEFA">
   <img alt="macOS 15 or later" src="https://img.shields.io/badge/macOS-15%2B-000000?logo=apple&logoColor=white">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white">
   <img alt="Spotify only" src="https://img.shields.io/badge/Spotify-only-1DB954?logo=spotify&logoColor=white">
@@ -62,7 +62,7 @@ controller are upstream's work, kept pixel-identical; see [Credits](#credits--pr
 
 | | |
 | --- | --- |
-| **Latest release** | [v0.1.4](https://github.com/Kathir-D/Sonar/releases/latest) — 0.5 s to pause, 0.5 s to resume |
+| **Latest release** | [v0.1.5](https://github.com/Kathir-D/Sonar/releases/latest) — 0.5 s to pause, 0.5 s to resume |
 | **Install** | `brew tap Kathir-D/tap && brew trust Kathir-D/tap && brew install --cask sonar` |
 | **Requires** | macOS 15 or later, and the Spotify desktop app. No account tier needed |
 | **Cost** | Free, MIT, and no paid Apple account — so it is ad-hoc signed rather than notarized |
@@ -232,8 +232,8 @@ you get `Refusing to load cask kathir-d/tap/sonar from untrusted tap`.
 ### Direct download
 
 ```sh
-curl -fLO https://github.com/Kathir-D/Sonar/releases/download/v0.1.4/Sonar-0.1.4.zip
-unzip Sonar-0.1.4.zip
+curl -fLO https://github.com/Kathir-D/Sonar/releases/download/v0.1.5/Sonar-0.1.5.zip
+unzip Sonar-0.1.5.zip
 sudo mv Sonar.app /Applications/
 open /Applications/Sonar.app
 ```
