@@ -21,6 +21,15 @@ public enum RelinquishReason: String, Sendable, Equatable {
     case wasPausedAlready
 }
 
+/// Where the adapter is in a duck/restore cycle, for observers outside the
+/// engine (the published `state.json`). Read-only: nothing decides on it.
+public enum AdapterPhase: String, Sendable, Equatable {
+    case idle
+    case ducking
+    case ducked
+    case resuming
+}
+
 /// Serialized Spotify fade/pause/resume runner with ownership.
 ///
 /// Contract:
@@ -86,6 +95,29 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
         lock.lock()
         _restoreInProgress = value
         lock.unlock()
+        // Only the start is published. The flag drops a moment before
+        // ownership is released, and publishing that gap would flash "ducked"
+        // between "resuming" and "idle"; `restoreSync` publishes the outcome.
+        if value { publishPhaseIfChanged() }
+    }
+
+    private var lastPublishedPhase: AdapterPhase = .idle
+
+    private func phaseLocked() -> AdapterPhase {
+        guard _ownedPID != nil else { return .idle }
+        if _duckInProgress { return .ducking }
+        if _restoreInProgress { return .resuming }
+        return .ducked
+    }
+
+    private func publishPhaseIfChanged() {
+        lock.lock()
+        let phase = phaseLocked()
+        let pid = _ownedPID
+        let changed = phase != lastPublishedPhase
+        lastPublishedPhase = phase
+        lock.unlock()
+        if changed { onPhaseChange?(phase, pid) }
     }
 
     /// Called on an arbitrary queue for diagnostics.
@@ -114,6 +146,24 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
         defer { lock.unlock() }
         return _ownedPID != nil
     }
+
+    /// The Spotify pid this adapter owns, or nil when it owns nothing.
+    public var ownedPID: pid_t? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _ownedPID
+    }
+
+    /// The current phase, derived from ownership and the in-progress flags.
+    public var phase: AdapterPhase {
+        lock.lock()
+        defer { lock.unlock() }
+        return phaseLocked()
+    }
+
+    /// Fired with the new phase whenever it changes, on whichever queue made
+    /// the change. Observation only: it never feeds back into a decision.
+    public var onPhaseChange: (@Sendable (AdapterPhase, pid_t?) -> Void)?
 
     /// Duck Spotify because `source` is producing audio. Async on the serial
     /// queue; safe to call every tick (no-ops while already owned).
@@ -161,9 +211,18 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
     }
 
     /// Synchronous variants for tests (run on the calling thread).
-    public func duckSync(source: String) { duckImpl(source: source, generation: currentGeneration()) }
-    public func restoreSync() { restoreImpl(generation: currentGeneration()) }
-    public func reconcileSync() { reconcileImpl() }
+    public func duckSync(source: String) {
+        duckImpl(source: source, generation: currentGeneration())
+        publishPhaseIfChanged()
+    }
+    public func restoreSync() {
+        restoreImpl(generation: currentGeneration())
+        publishPhaseIfChanged()
+    }
+    public func reconcileSync() {
+        reconcileImpl()
+        publishPhaseIfChanged()
+    }
 
     /// Undo a duck as the app quits.
     ///
@@ -221,6 +280,7 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
                     self.onEvent?(.restored)
                 }
                 self.releaseOwnership()
+                self.publishPhaseIfChanged()
             }
             done.signal()
         }
@@ -322,6 +382,7 @@ public final class SpotifyFadeAdapter: @unchecked Sendable {
         lock.lock()
         _duckInProgress = value
         lock.unlock()
+        publishPhaseIfChanged()
     }
 
     @discardableResult
