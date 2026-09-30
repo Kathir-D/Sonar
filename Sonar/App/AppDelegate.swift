@@ -98,6 +98,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let monitor = eventMonitor {
             NSEvent.removeMonitor(monitor)
         }
+        SonarStatePublisher.shared.publishIdleAtQuit()
     }
 
     private func setupKeyboardShortcuts() {
