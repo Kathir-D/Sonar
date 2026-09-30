@@ -74,6 +74,11 @@ final class SonarEngineHost: ObservableObject {
         controller.onDiagnostic = { message in
             SonarLog.write("engine: \(message)")
         }
+        // Companion tools (trak) read the duck phase from state.json. Purely
+        // an observer: the engine never learns whether anyone is listening.
+        controller.adapter.onPhaseChange = { phase, pid in
+            SonarStatePublisher.shared.publish(phase, pid: pid)
+        }
     }
 
     /// Start the engine with the current prefs (called once at launch).
@@ -132,6 +137,8 @@ final class SonarEngineHost: ObservableObject {
         if !prefs.enabled, controller.adapter.isOwned {
             controller.adapter.restore()
         }
+        SonarStatePublisher.shared.setEnabled(
+            prefs.enabled, current: controller.adapter.phase, pid: controller.adapter.ownedPID)
         refreshDiagnostics()
         DispatchQueue.main.async { [weak self] in self?.updateUIState() }
     }
