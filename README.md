@@ -161,7 +161,7 @@ stops matching a preset, and the pane says why.
   pause, volume change, player restart, or quit releases ownership and restores your volume.
 - **No Premium required** — playback control goes through AppleScript, so it works with a normal
   Spotify install and with `headless-spotify` (same `com.spotify.client` bundle).
-- **Works with [trak](https://github.com/Kathir-D/trak)** — the terminal UI for Spotify can read
+- **Works with [Trak](https://github.com/Kathir-D/Trak)** — the terminal UI for Spotify can read
   what Auto-Pause is doing from a small [state file](#statejson-for-companion-tools), so it can
   show *ducked* instead of guessing why the music stopped.
 
@@ -482,7 +482,7 @@ entered from two threads at once, which is a reliable way to crash.
 ### state.json for companion tools
 
 Sonar writes what Auto-Pause is doing to `~/Library/Application Support/Sonar/state.json`, so
-another tool can show it. [trak](https://github.com/Kathir-D/trak) reads it; anything else is
+another tool can show it. [Trak](https://github.com/Kathir-D/Trak) reads it; anything else is
 welcome to.
 
 ```json
@@ -882,9 +882,9 @@ backgrounds. The Spotify mark itself is Spotify's, not SpotMenu's.
 | Tap and ducking concepts | [mattwong05/FlowSound](https://github.com/mattwong05/FlowSound) | @mattwong05 | No license — ideas only | n/a | Reimplemented from Apple docs, nothing copied |
 | CoreAudio tap APIs | Apple Developer documentation | Apple | — | — | Clean-room implementation |
 
-**Works with [trak](https://github.com/Kathir-D/trak)**, a terminal UI for Spotify by the same
+**Works with [Trak](https://github.com/Kathir-D/Trak)**, a terminal UI for Spotify by the same
 author. The two only share the [state file](#statejson-for-companion-tools); neither depends on
-the other, and no trak code is in Sonar.
+the other, and no Trak code is in Sonar.
 
 Full license texts and per-file notes: [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
