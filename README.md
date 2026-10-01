@@ -1,3 +1,11 @@
+> [!WARNING]
+> **THIS WAS A VERY VIEBCODED PROJECT BECAUSE NO AUTO PAUSE SOFTWARE WORKED FAST ENOUGH**
+> 
+> Don't be stupid- expect bugs, weird implementations, and most likely not much support.
+
+
+
+
 <div align="center">
   <img src="Sonar/Assets.xcassets/AppIcon.appiconset/icon_256x256.png" alt="Sonar app icon" width="128" height="128">
   <h1>Sonar</h1>
