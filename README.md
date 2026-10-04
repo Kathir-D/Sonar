@@ -4,12 +4,18 @@
 > Don't be stupid- expect bugs, weird implementations, and most likely not much support.
 
 
-
-
 <div align="center">
   <img src="Sonar/Assets.xcassets/AppIcon.appiconset/icon_256x256.png" alt="Sonar app icon" width="128" height="128">
   <h1>Sonar</h1>
   <p><strong>Spotify in your macOS menu bar, with hybrid auto-pause.</strong></p>
+
+</div>
+
+<p align="center">
+  <img src="docs/images/sonar-demo.gif" alt="Sonar demo: a notification, a beep and a screenshot play while Spotify keeps going, then a short clip from another app pauses Spotify and it resumes" width="800">
+</p>
+</sub></p>
+<div align="center">
   <p>
     <a href="#about">About</a> ·
     <a href="#screenshots">Screenshots</a> ·
@@ -41,15 +47,6 @@ Other apps don't always behave. Some hold their audio open even when they're not
 anything, so Sonar can't always tell the difference between a video that's paused and one you've
 muted. When that happens, your music can start and stop at times that don't match what you're
 hearing.
-
-<p align="center">
-  <img src="docs/images/sonar-demo.gif" alt="Sonar demo: a notification, a beep and a screenshot play while Spotify keeps going, then a short clip from another app pauses Spotify and it resumes" width="800">
-</p>
-<p align="center"><sub>
-  Recorded live by <code>scripts/record-demo.py</code>: real Sonar, real Spotify, real sounds.
-  Apple system sounds are ignored, while a short clip from another app still pauses the music.
-  <a href="docs/images/sonar-demo.mp4">MP4 version</a>.
-</sub></p>
 
 | | measured, on a MacBook Pro, Instant preset |
 | --- | --- |
