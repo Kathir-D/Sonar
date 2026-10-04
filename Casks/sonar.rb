@@ -1,5 +1,5 @@
 cask "sonar" do
-  version "0.1.5"
+  version "0.1.6"
   sha256 "REPLACE_WITH_RELEASE_SHA256"
 
   url "https://github.com/Kathir-D/Sonar/releases/download/v#{version}/Sonar-#{version}.zip"
