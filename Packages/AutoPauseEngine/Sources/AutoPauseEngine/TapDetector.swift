@@ -853,7 +853,6 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
             for (objectID, bundleID, pid) in objectIDs {
                 let rpid = ResponsibleProcess.pid(for: pid)
                 let rbundle = NSRunningApplication(processIdentifier: rpid)?.bundleIdentifier ?? bundleID
-                let name = NSRunningApplication(processIdentifier: pid)?.localizedName ?? "pid \(pid)"
                 if pid == getpid() || rpid == getpid() {
                     excluded.insert(objectID)
                     notes.append("self(\(objectID))")
@@ -864,9 +863,12 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
                     notes.append("\(rbundle.isEmpty ? bundleID : rbundle)(\(objectID))")
                     continue
                 }
-                if PollRules.excludedNames.contains(name) {
+                if config.filter.ignoresAppleSystemSounds,
+                    let path = AppleSystemSounds.executablePath(of: pid),
+                    AppleSystemSounds.isSystemSoundPlayer(executablePath: path)
+                {
                     excluded.insert(objectID)
-                    notes.append("daemon \(name)(\(objectID))")
+                    notes.append("system-sound \((path as NSString).lastPathComponent)(\(objectID))")
                     continue
                 }
                 // A process object with no bundle id and no live app behind it
@@ -890,9 +892,15 @@ public final class TapDetector: HybridDetector, @unchecked Sendable {
             for (objectID, bundleID, pid) in objectIDs {
                 let rpid = ResponsibleProcess.pid(for: pid)
                 let rbundle = NSRunningApplication(processIdentifier: rpid)?.bundleIdentifier ?? bundleID
-                if config.filter.bundleIDs.contains(bundleID) || config.filter.bundleIDs.contains(rbundle) {
-                    included.insert(objectID)
+                guard config.filter.bundleIDs.contains(bundleID) || config.filter.bundleIDs.contains(rbundle)
+                else { continue }
+                if config.filter.ignoresAppleSystemSounds,
+                    let path = AppleSystemSounds.executablePath(of: pid),
+                    AppleSystemSounds.isSystemSoundPlayer(executablePath: path)
+                {
+                    continue
                 }
+                included.insert(objectID)
             }
             return TapTargets(
                 excludedObjectIDs: [],

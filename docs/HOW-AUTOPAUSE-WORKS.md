@@ -423,9 +423,19 @@ old 0.75: the gap tolerance used to double the resume latency on top of `quietDu
 One consequence worth naming, because it is a product behaviour rather than a bug: a short
 sound now triggers a duck. A 0.3 s notification chime activates the tap immediately, holds
 for 0.15 s, then decays, and fusion waits 0.3 s before restoring — so the music stops for
-about half a second. `systemsoundserverd` and `usernoted` are excluded by name
-(`PollDetector.swift:45-48`, and the equivalent exclusion in the tap's target resolution),
-but third-party alert sounds are not, and are not meant to be.
+about half a second. Apple's own system sounds are the exception: with *Ignore Apple system
+sounds* on (the default), the process that plays them is left out of both the tap and the poll.
+
+That exclusion used to compare names from `NSRunningApplication.localizedName`, which is nil for
+daemons, so it never matched and every notification paused the music. It now identifies the
+player by its executable path (`AppleSystemSounds.swift`, via `proc_pidpath`, about 1 µs): the
+basename must be `systemsoundserverd`, `usernoted` or `PowerChime`, and the path must sit under a
+SIP-protected prefix (`/System/`, `/usr/sbin/`, `/usr/libexec/`, `/usr/bin/`), so a lookalike
+binary elsewhere still counts. On macOS 27 `systemsoundserverd` plays beeps, alert and system
+sounds, Notification Center sounds and the screenshot shutter, and `PowerChime` plays the
+charging chime. Sound an app plays itself (`NSSound`, `afplay`, `say`), even an Apple sound file,
+is attributed to that app and still counts. Third-party alert sounds are not excluded, and are
+not meant to be. `scripts/system-sounds-smoke.py` checks all of this end to end.
 
 ## 4. Latency, and where it actually went
 
@@ -756,7 +766,7 @@ all in the test:
 
 ### What the unit suite does and does not cover
 
-`swift test` (311 tests, ~3 s, no hardware, no permissions) pins the
+`swift test` (318 tests, ~3 s, no hardware, no permissions) pins the
 decision loop, the streak boundaries, the metering maths including non-interleaved float32
 buffers — which is what a tap actually delivers — the adapter's ownership rules, and the
 detector-preference contract.

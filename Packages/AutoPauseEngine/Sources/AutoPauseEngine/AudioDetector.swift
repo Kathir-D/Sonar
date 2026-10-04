@@ -18,19 +18,24 @@ public struct AudioProcess: Sendable, Equatable {
     public let responsiblePID: pid_t
     public let responsibleBundleID: String
     public let name: String
+    /// Real on-disk path of the process's executable (`proc_pidpath`), or ""
+    /// when it cannot be read. What `AppleSystemSounds` identifies by.
+    public let executablePath: String
 
     public init(
         pid: pid_t,
         bundleID: String,
         responsiblePID: pid_t,
         responsibleBundleID: String,
-        name: String
+        name: String,
+        executablePath: String = ""
     ) {
         self.pid = pid
         self.bundleID = bundleID
         self.responsiblePID = responsiblePID
         self.responsibleBundleID = responsibleBundleID
         self.name = name
+        self.executablePath = executablePath
     }
 }
 
@@ -88,7 +93,8 @@ public enum AudioDetector {
                 bundleID: bundle,
                 responsiblePID: rpid,
                 responsibleBundleID: rbundle,
-                name: name
+                name: name,
+                executablePath: AppleSystemSounds.executablePath(of: pid) ?? ""
             )
         }
     }

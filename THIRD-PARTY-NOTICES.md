@@ -43,7 +43,7 @@ SOFTWARE.
 ### yasinozmeen/smartpause — MIT 2026 Yasin Özmen
 - URL: https://github.com/yasinozmeen/smartpause
 - Upstream SHA: 69f3a9db31919b1e2ba4d1c6ba6f41564d6ed9b7 (HEAD at port, 2026)
-- Used: poll detector + ownership patterns. `Sources/SmartPause/AudioDetector.swift` + `Sources/SmartPause/AudioActivityTracker.swift` (incl. `ActivationTracker`) ported to `Packages/AutoPauseEngine` as `AudioDetector.swift` + `AudioActivityTracker.swift` with MIT headers kept; logic verbatim, comments translated to English. One adaptation: SmartPause's internal `Log` is not vendored — log lines route through `AudioActivityTracker.logHandler` (default silent). Sonar-new glue (`PollDetector.swift`: self/Spotify/`systemsoundserverd`/`usernoted` exclusions, all-except/watched-only filters) is Sonar code under Sonar MIT.
+- Used: poll detector + ownership patterns. `Sources/SmartPause/AudioDetector.swift` + `Sources/SmartPause/AudioActivityTracker.swift` (incl. `ActivationTracker`) ported to `Packages/AutoPauseEngine` as `AudioDetector.swift` + `AudioActivityTracker.swift` with MIT headers kept; logic verbatim, comments translated to English. One adaptation: SmartPause's internal `Log` is not vendored — log lines route through `AudioActivityTracker.logHandler` (default silent). Sonar-new glue (`PollDetector.swift`: self/Spotify exclusions, all-except/watched-only filters; `AppleSystemSounds.swift`: the Apple system-sound player check) is Sonar code under Sonar MIT.
 - Full upstream MIT text (`LICENSE` @ 69f3a9db31919b1e2ba4d1c6ba6f41564d6ed9b7):
 
 ```

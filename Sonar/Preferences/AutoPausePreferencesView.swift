@@ -888,6 +888,14 @@ struct AutoPausePreferencesView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            Toggle(isOn: $model.ignoreSystemSounds) {
+                Text("Ignore Apple system sounds")
+                Text(
+                    "Notification sounds, alerts, the screenshot shutter and the charging "
+                        + "chime never pause your music. Short sounds from apps still do."
+                )
+            }
         } header: {
             Text("Which apps pause your music")
         } footer: {

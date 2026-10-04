@@ -31,6 +31,7 @@ class AutoPausePreferencesModel: ObservableObject {
         static let threshold = "autopause.threshold"
         static let filterMode = "autopause.filterMode"
         static let bundleIDs = "autopause.bundleIDs"
+        static let ignoreSystemSounds = "autopause.ignoreSystemSounds"
     }
 
     /// Loudness the presets configure. `AutoPausePreset` owns the value and it
@@ -60,6 +61,9 @@ class AutoPausePreferencesModel: ObservableObject {
     @Published var threshold: Double { didSet { save() } }
     @Published var filterMode: SourceFilterMode { didSet { save() } }
     @Published var bundleIDs: [String] { didSet { save() } }
+    /// Notification sounds, alerts and other sounds macOS itself plays never
+    /// pause the music. On by default: a ding is not something to pause for.
+    @Published var ignoreSystemSounds: Bool { didSet { save() } }
 
     private let defaults: UserDefaults
     private let permissions: SonarPermissions
@@ -94,6 +98,7 @@ class AutoPausePreferencesModel: ObservableObject {
         )
         filterMode = (defaults.string(forKey: Key.filterMode)).flatMap(SourceFilterMode.init(rawValue:)) ?? .allExcept
         bundleIDs = defaults.stringArray(forKey: Key.bundleIDs) ?? []
+        ignoreSystemSounds = defaults.object(forKey: Key.ignoreSystemSounds) as? Bool ?? true
     }
 
     private func save() {
@@ -106,6 +111,7 @@ class AutoPausePreferencesModel: ObservableObject {
         defaults.set(threshold, forKey: Key.threshold)
         defaults.set(filterMode.rawValue, forKey: Key.filterMode)
         defaults.set(bundleIDs, forKey: Key.bundleIDs)
+        defaults.set(ignoreSystemSounds, forKey: Key.ignoreSystemSounds)
     }
 
     // MARK: - Enabling
@@ -330,12 +336,17 @@ class AutoPausePreferencesModel: ObservableObject {
 
     /// What the engine runs with right now.
     var sourceFilter: SourceFilter {
-        SourceFilter(mode: filterMode, bundleIDs: Set(bundleIDs))
+        SourceFilter(
+            mode: filterMode,
+            bundleIDs: Set(bundleIDs),
+            ignoresAppleSystemSounds: ignoreSystemSounds
+        )
     }
 
     /// Identity of the tap-affecting rules. Save restarts the tap only when
     /// this changes; timing/volume tweaks apply live without rebuild.
     var rulesFingerprint: String {
-        ([filterMode.rawValue] + bundleIDs.sorted()).joined(separator: "\n")
+        ([filterMode.rawValue, "systemSounds=\(ignoreSystemSounds)"] + bundleIDs.sorted())
+            .joined(separator: "\n")
     }
 }

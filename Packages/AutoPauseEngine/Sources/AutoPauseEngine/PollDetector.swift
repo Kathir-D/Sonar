@@ -15,10 +15,19 @@ public struct SourceFilter: Sendable, Equatable {
     public var mode: SourceFilterMode
     /// Bundle IDs for the mode. Empty = no user rules.
     public var bundleIDs: Set<String>
+    /// When true, Apple's own sounds (notifications, alerts, the screenshot
+    /// shutter, the charger chime) never count as another app playing. See
+    /// `AppleSystemSounds` for how they are told apart from short app audio.
+    public var ignoresAppleSystemSounds: Bool
 
-    public init(mode: SourceFilterMode = .allExcept, bundleIDs: Set<String> = []) {
+    public init(
+        mode: SourceFilterMode = .allExcept,
+        bundleIDs: Set<String> = [],
+        ignoresAppleSystemSounds: Bool = true
+    ) {
         self.mode = mode
         self.bundleIDs = bundleIDs
+        self.ignoresAppleSystemSounds = ignoresAppleSystemSounds
     }
 
     func allows(_ process: AudioProcess) -> Bool {
@@ -41,12 +50,6 @@ public enum PollRules {
         "com.KathirD.sonar",  // self, in case Sonar ever emits audio
     ]
 
-    /// Daemon process names (they usually have no bundle ID) that never count.
-    public static let excludedNames: Set<String> = [
-        "systemsoundserverd",  // UI blips, not media
-        "usernoted",  // notification sounds, not media
-    ]
-
     /// True when the process must never be treated as external audio.
     /// Checks both the raw and the responsible pid/bundle so helpers
     /// (Spotify Helper, WebKit.GPU, ...) resolve to their parent.
@@ -54,18 +57,22 @@ public enum PollRules {
         if process.pid == selfPID || process.responsiblePID == selfPID { return true }
         if excludedBundleIDs.contains(process.bundleID) { return true }
         if excludedBundleIDs.contains(process.responsibleBundleID) { return true }
-        if excludedNames.contains(process.name) { return true }
         return false
     }
 
-    /// Pure, hardware-independent filtering: exclusions first, then the
-    /// user filter. This is what the unit tests exercise.
+    /// Pure, hardware-independent filtering: exclusions first, then Apple's
+    /// system sounds (when the filter ignores them), then the user filter.
+    /// This is what the unit tests exercise.
     public static func filtered(
         _ processes: [AudioProcess],
         selfPID: pid_t,
         filter: SourceFilter
     ) -> [AudioProcess] {
-        processes.filter { !isExcluded($0, selfPID: selfPID) && filter.allows($0) }
+        processes.filter {
+            !isExcluded($0, selfPID: selfPID)
+                && !(filter.ignoresAppleSystemSounds && AppleSystemSounds.isSystemSoundPlayer($0))
+                && filter.allows($0)
+        }
     }
 }
 

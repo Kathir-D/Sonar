@@ -21,15 +21,28 @@ private func proc(
     bundle: String = "",
     rpid: pid_t? = nil,
     rbundle: String? = nil,
-    name: String = ""
+    name: String = "",
+    path: String = ""
 ) -> AudioProcess {
     AudioProcess(
         pid: pid,
         bundleID: bundle,
         responsiblePID: rpid ?? pid,
         responsibleBundleID: rbundle ?? bundle,
-        name: name
+        name: name,
+        executablePath: path
     )
+}
+
+/// What Core Audio really reports for the system-sound daemons on macOS 27:
+/// a bundle id that is just the executable name, and no app name at all, so
+/// `AudioDetector` labels them "pid N".
+private func systemSoundServer(pid: pid_t = 200) -> AudioProcess {
+    proc(pid: pid, bundle: "systemsoundserverd", name: "pid \(pid)", path: "/usr/sbin/systemsoundserverd")
+}
+
+private func usernoted(pid: pid_t = 201) -> AudioProcess {
+    proc(pid: pid, bundle: "com.apple.usernoted", name: "pid \(pid)", path: "/usr/sbin/usernoted")
 }
 
 /// The pid every test pretends to be "Sonar".
@@ -75,24 +88,67 @@ private let selfPID: pid_t = 4242
             proc(pid: 102, bundle: "com.evil.lookalike", name: "Spotify"), selfPID: selfPID))
 }
 
-@Test func exclusionsMatchDaemonNamesExactly() {
-    // UI blips and notification sounds are not media. If they counted, every
-    // incoming message would pause the music.
-    #expect(PollRules.isExcluded(proc(pid: 200, name: "systemsoundserverd"), selfPID: selfPID))
-    #expect(PollRules.isExcluded(proc(pid: 201, name: "usernoted"), selfPID: selfPID))
-    // Exact match only: a lookalike name is somebody else's audio.
+@Test func appleSystemSoundsAreDroppedByDefault() {
+    // Notification sounds and alert beeps are not media. If they counted,
+    // every incoming message would pause the music.
+    let filter = SourceFilter()
+    #expect(filter.ignoresAppleSystemSounds)
+    #expect(PollRules.filtered([systemSoundServer()], selfPID: selfPID, filter: filter).isEmpty)
+    #expect(PollRules.filtered([usernoted()], selfPID: selfPID, filter: filter).isEmpty)
+    let chime = proc(
+        pid: 202, bundle: "com.apple.PowerChime", name: "PowerChime",
+        path: "/System/Library/CoreServices/PowerChime.app/Contents/MacOS/PowerChime")
+    #expect(PollRules.filtered([chime], selfPID: selfPID, filter: filter).isEmpty)
+}
+
+@Test func appleSystemSoundsCountWhenTheUserTurnsTheRuleOff() {
+    let filter = SourceFilter(ignoresAppleSystemSounds: false)
     #expect(
-        !PollRules.isExcluded(proc(pid: 202, name: "usernoted-helper"), selfPID: selfPID))
-    #expect(
-        !PollRules.isExcluded(proc(pid: 203, name: "myusernoted"), selfPID: selfPID))
-    #expect(
-        !PollRules.isExcluded(proc(pid: 204, name: "USERNOTED"), selfPID: selfPID))
-    // A daemon *with* a bundle id is not covered by the name rule alone if the
-    // bundle is a media app - the bundle id is what matters, and the name is
-    // only ever consulted for the two listed daemons.
-    #expect(
-        !PollRules.isExcluded(
-            proc(pid: 205, bundle: "com.apple.Music", name: "Music"), selfPID: selfPID))
+        PollRules.filtered([systemSoundServer()], selfPID: selfPID, filter: filter).map(\.pid)
+            == [200])
+}
+
+@Test func systemSoundsAreNotHardExclusions() {
+    // They are a user rule, not a "never" rule like Spotify and Sonar: the
+    // switch in the pane has to be able to turn them back on.
+    #expect(!PollRules.isExcluded(systemSoundServer(), selfPID: selfPID))
+}
+
+@Test func shortAudioFromAnyOtherAppStillCounts() {
+    // The rule is about who plays, never about how short the sound is. These
+    // are all short, and all of them have to pause the music.
+    let found = [
+        // An app playing a system sound file itself (NSSound / afplay) is that
+        // app's audio: Core Audio attributes it to the app, not the daemon.
+        proc(pid: 300, bundle: "com.tinyspeck.slackmacgap", name: "Slack",
+             path: "/Applications/Slack.app/Contents/MacOS/Slack"),
+        proc(pid: 301, name: "pid 301", path: "/usr/bin/afplay"),
+        proc(pid: 302, bundle: "com.apple.MobileSMS", name: "Messages",
+             path: "/System/Applications/Messages.app/Contents/MacOS/Messages"),
+    ]
+    #expect(PollRules.filtered(found, selfPID: selfPID, filter: SourceFilter()).map(\.pid) == [300, 301, 302])
+}
+
+@Test func lookalikesOfTheSystemSoundDaemonsStillCount() {
+    let filter = SourceFilter()
+    let fakes = [
+        // Claims the bundle id and the name, but lives in an app bundle.
+        proc(pid: 400, bundle: "systemsoundserverd", name: "systemsoundserverd",
+             path: "/Applications/Evil.app/Contents/MacOS/systemsoundserverd"),
+        // /usr/local is user-writable, so it proves nothing.
+        proc(pid: 401, bundle: "systemsoundserverd", name: "pid 401",
+             path: "/usr/local/sbin/systemsoundserverd"),
+        // Right directory, wrong name.
+        proc(pid: 402, name: "pid 402", path: "/usr/sbin/systemsoundserverd-helper"),
+        proc(pid: 403, name: "pid 403", path: "/usr/sbin/Systemsoundserverd"),
+        // Walks out of a protected directory.
+        proc(pid: 404, name: "pid 404", path: "/usr/sbin/../local/bin/systemsoundserverd"),
+        // Home folders are writable too.
+        proc(pid: 405, name: "pid 405", path: "/Users/someone/System/usernoted"),
+        // Unknown path: never assumed to be a system sound.
+        proc(pid: 406, bundle: "systemsoundserverd", name: "systemsoundserverd", path: ""),
+    ]
+    #expect(PollRules.filtered(fakes, selfPID: selfPID, filter: filter).map(\.pid) == Array(400...406))
 }
 
 @Test func filteringKeepsOnlyRealMediaWhenNothingElseIsExcluded() {
@@ -104,8 +160,8 @@ private let selfPID: pid_t = 4242
         proc(pid: 100, bundle: "com.spotify.client", name: "Spotify"),
         proc(pid: 101, bundle: "com.spotify.client.helper", rpid: 100,
              rbundle: "com.spotify.client", name: "Spotify Helper"),
-        proc(pid: 200, name: "systemsoundserverd"),
-        proc(pid: 201, name: "usernoted"),
+        systemSoundServer(),
+        usernoted(),
         proc(pid: 300, bundle: "com.apple.Safari", name: "Safari"),
         proc(pid: 301, bundle: "com.apple.WebKit.GPU", rpid: 300,
              rbundle: "com.apple.Safari", name: "Safari GPU"),
@@ -140,7 +196,8 @@ private let selfPID: pid_t = 4242
     // "Sonar ducks itself", and it is persisted nowhere, so a typo in a bundle
     // id is invisible until it misfires on a real machine.
     #expect(PollRules.excludedBundleIDs == ["com.spotify.client", "com.KathirD.sonar"])
-    #expect(PollRules.excludedNames == ["systemsoundserverd", "usernoted"])
+    #expect(AppleSystemSounds.executableNames == ["systemsoundserverd", "usernoted", "PowerChime"])
+    #expect(AppleSystemSounds.protectedPrefixes == ["/System/", "/usr/sbin/", "/usr/libexec/", "/usr/bin/"])
 }
 
 @Test func theSpotifyBundleIdIsTheSameConstantTheAdapterUses() {
@@ -309,6 +366,9 @@ private let selfPID: pid_t = 4242
     #expect(
         SourceFilter(mode: .allExcept, bundleIDs: ["a"])
             != SourceFilter(mode: .allExcept, bundleIDs: ["b"]))
+    // The system-sound switch is part of the identity: flipping it has to
+    // reach the tap, which only rebuilds when its filter changes.
+    #expect(SourceFilter() != SourceFilter(ignoresAppleSystemSounds: false))
 }
 
 // MARK: - Composition: hard exclusions win over user rules
@@ -322,7 +382,7 @@ private let selfPID: pid_t = 4242
         proc(pid: 101, bundle: "com.spotify.client.helper", rpid: 100,
              rbundle: "com.spotify.client", name: "Spotify Helper"),
         proc(pid: selfPID, bundle: "com.KathirD.sonar", name: "Sonar"),
-        proc(pid: 200, name: "systemsoundserverd"),
+        systemSoundServer(),
         proc(pid: 400, bundle: "com.google.Chrome", name: "Chrome"),
     ]
     #expect(PollRules.filtered(found, selfPID: selfPID, filter: filter).map(\.pid) == [400])

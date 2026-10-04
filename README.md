@@ -42,6 +42,15 @@ anything, so Sonar can't always tell the difference between a video that's pause
 muted. When that happens, your music can start and stop at times that don't match what you're
 hearing.
 
+<p align="center">
+  <img src="docs/images/sonar-demo.gif" alt="Sonar demo: a notification, a beep and a screenshot play while Spotify keeps going, then a short clip from another app pauses Spotify and it resumes" width="800">
+</p>
+<p align="center"><sub>
+  Recorded live by <code>scripts/record-demo.py</code>: real Sonar, real Spotify, real sounds.
+  Apple system sounds are ignored, while a short clip from another app still pauses the music.
+  <a href="docs/images/sonar-demo.mp4">MP4 version</a>.
+</sub></p>
+
 | | measured, on a MacBook Pro, Instant preset |
 | --- | --- |
 | Time from another app making sound to Spotify pausing | **0.33 s** |
@@ -100,6 +109,7 @@ brew install --cask sonar
   - [Presets](#presets)
   - [Advanced settings](#advanced-settings)
   - [Which apps pause your music](#which-apps-pause-your-music)
+  - [Apple system sounds don't pause your music](#apple-system-sounds-dont-pause-your-music)
   - [How the decision is made](#how-the-decision-is-made)
   - [Ownership: never fight the user](#ownership-never-fight-the-user)
   - [state.json for companion tools](#statejson-for-companion-tools)
@@ -165,6 +175,9 @@ stops matching a preset, and the pane says why.
   threshold, all behind *Advanced settings*.
 - **Per-app rules** — *All apps* or *Only these apps*, with a live "heard in the last 3 minutes"
   finder so you can see what is actually making noise.
+- **Notifications don't pause your music** — Apple's own sounds (notifications, alerts, the
+  screenshot shutter, the charger chime) are recognised by the process that plays them, not by
+  length, so a short sound from an app still pauses. On by default; [details](#apple-system-sounds-dont-pause-your-music).
 - **Correct ownership** — Sonar resumes only if it paused the same Spotify process. Any manual
   pause, volume change, player restart, or quit releases ownership and restores your volume.
 - **No Premium required** — playback control goes through AppleScript, so it works with a normal
@@ -427,6 +440,7 @@ any control out of a preset's values is what switches the pane to *Custom*.
 | Resume delay | 0–10 s | How long everything has to stay quiet before Sonar starts again |
 | Loudness sensitivity | *Only loud sound* → *Even a whisper* | The RMS floor for counting as audio. Dragging right picks up more — the slider is inverted because the engine compares `rms >= threshold`, so a bigger number is a *stricter* test |
 | Which apps count | *All apps* / *Only these apps* | A read-only summary of the list below; the sentence under it spells out the result in plain English |
+| Ignore Apple system sounds | On / Off (default **On**) | Notification sounds, alerts, the screenshot shutter and the charging chime never pause your music. Short sounds from apps still do |
 
 ### Which apps pause your music
 
@@ -438,6 +452,43 @@ is a live scan, with real app icons and names, and one tap to add or ignore an a
 listed separately — a browser counts as one app, so it is all-or-nothing per browser. The button
 label follows the current mode, so it never claims to *Watch* an app while actually adding it to
 the ignore list.
+
+### Apple system sounds don't pause your music
+
+A notification ding is not a reason to stop the music. With **Ignore Apple system sounds** on (the
+default), Sonar never pauses for a sound macOS itself plays, and still pauses for every app,
+however short its sound is.
+
+It decides by **who is playing**, never by how long or how loud the sound is. A Slack ping or a
+half-second clip from a game is just as short as a notification, so a duration rule would have to
+get one of them wrong. Instead, Sonar asks the kernel where the playing process's executable lives
+(`proc_pidpath`) and ignores it only if it is one of Apple's system-sound players *and* sits on the
+sealed, SIP-protected system volume. No app can install a binary there, so nothing else can pass
+as a system sound — not even an app that plays Apple's own `Glass.aiff` itself.
+
+| Sound | Played by | Pauses? |
+| --- | --- | --- |
+| Notification Center sounds (Messages, Mail, Reminders, …) | `/usr/sbin/systemsoundserverd` | No |
+| Alert beeps, `NSBeep`, `AudioServicesPlaySystemSound` from any app | `/usr/sbin/systemsoundserverd` | No |
+| Screenshot shutter | `/usr/sbin/systemsoundserverd` | No |
+| Charger chime | `/System/Library/CoreServices/PowerChime.app` | No |
+| Any app playing its own audio, even an Apple sound file | the app | **Yes** |
+
+The rule applies to both detectors. The tap excludes those processes from the capture itself, so
+their audio never reaches the loudness meter, and the poll drops them from its scan.
+
+Verified end to end by [`scripts/system-sounds-smoke.py`](scripts/system-sounds-smoke.py) against
+the real app and the real Spotify on the Instant preset (0.1 s of sound is enough to pause). Each
+trial proves the system sound actually played before it counts:
+
+| Trials | Result |
+| --- | --- |
+| 29 Apple system sounds: beeps, alert sounds, all 14 sounds in `/System/Library/Sounds`, a burst of six, screenshots, real Notification Center alarms | **29 / 29 never paused** |
+| 15 short app sounds: a 0.4 s tone, `Glass.aiff` via `afplay`, `Ping.aiff` via `NSSound` | **15 / 15 paused and resumed**, median 0.41 s to pause |
+| Control: `Glass.aiff` through `systemsoundserverd` with the switch **off** | **2 / 2 paused** — the test can see a pause when there is one |
+
+The charger chime is excluded the same way (Sonar's log lists `system-sound PowerChime` among the
+tap's exclusions), but the script cannot plug in a charger, so it is not part of the run.
 
 ### How the decision is made
 
@@ -766,7 +817,7 @@ changed underneath the tap. Sonar rebuilds the tap when the hardware list change
 | `Sonar/Preferences/` | SwiftUI preference panes, including Auto-Pause |
 | `Sonar/UI/` | Menu, popover window, status-item configuration |
 | `Sonar/Engine/` | Engine host, permission state, bounded log, the `state.json` publisher |
-| `Packages/AutoPauseEngine/` | The auto-pause engine as a standalone Swift package, with its own 311-test suite |
+| `Packages/AutoPauseEngine/` | The auto-pause engine as a standalone Swift package, with its own 318-test suite |
 | `scripts/` | Build, package, sign, cask and smoke-test helpers |
 | `docs/` | [The Auto-Pause deep dive](docs/HOW-AUTOPAUSE-WORKS.md), the [release runbook](docs/RELEASING.md), the engine audit and its release triage |
 
@@ -799,6 +850,7 @@ scripts/build-app.sh
 | `scripts/sign-release.sh` | Ad-hoc verification locally; `--release` signs, notarizes and staples, but only if a Developer ID is configured |
 | `scripts/bump-cask.sh` | Fill a version and SHA-256 into `Casks/sonar.rb` (the release run does this itself) |
 | `scripts/autopause-smoke.sh` | End-to-end: force the Instant preset, play a test tone, and measure how long Spotify takes to pause and resume |
+| `scripts/system-sounds-smoke.py` | End-to-end: Apple system sounds must not pause Spotify, short app sounds must, and the switch turned off must pause again |
 
 The end-to-end check is deliberately not part of CI: it needs a real audio device, a running
 Spotify, and the two privacy grants, and audio on a build machine is a shared resource — only
@@ -810,6 +862,9 @@ scripts/autopause-smoke.sh --dry-run
 
 # against the installed app: quits Sonar, forces the Instant preset, tests, restores
 scripts/autopause-smoke.sh
+
+# system sounds vs. short app sounds (--set-volumes unmutes for the run, then restores)
+python3 scripts/system-sounds-smoke.py --app dist/Sonar.app --set-volumes
 ```
 
 CI ([`ci.yml`](.github/workflows/ci.yml)) runs the engine tests and a Debug app build on every
