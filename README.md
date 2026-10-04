@@ -12,9 +12,8 @@
 </div>
 
 <p align="center">
-  <img src="docs/images/sonar-demo.gif" alt="Sonar demo: a notification, a beep and a screenshot play while Spotify keeps going, then a short clip from another app pauses Spotify and it resumes" width="800">
+  <img src="docs/images/sonar-demo.gif" alt="Sonar demo: a notification plays while Spotify keeps going, then a short clip from another app pauses Spotify and it resumes, followed by the menu-bar player and the Auto-Pause settings" width="800">
 </p>
-</sub></p>
 <div align="center">
   <p>
     <a href="#about">About</a> ·
@@ -124,6 +123,11 @@ brew install --cask sonar
 
 ## Screenshots
 
+**The player lives in your menu bar.** Click Sonar's menu-bar item for the artwork, playback
+controls, the position in the track and the like button.
+
+<img src="docs/images/menu-bar-player.png" alt="Sonar's menu-bar player: album artwork with the artist, track title, previous, pause and next buttons, a progress bar and a like button" width="300">
+
 **Auto-Pause opens on its permissions**, because it cannot work without them, and the pane says so
 before it offers anything else. Each row shows a live state and a button that does the thing that
 actually helps — *Grant…* while macOS will still prompt, *Open System Settings* after it has stopped
@@ -142,7 +146,8 @@ stops matching a preset, and the pane says why.
 
 <img src="docs/images/auto-pause-presets.png" alt="The preset cards: Fade, Instant and Custom, each with a one-line explanation" width="470">
 
-**The whole pane, including which apps count.**
+**The whole pane, including which apps count**, and the switch that keeps Apple's own system
+sounds from pausing the music.
 
 <img src="docs/images/auto-pause-pane.png" alt="The full Auto-Pause pane: permissions, enable toggle, live state, presets, and the app list with icons" width="410">
 

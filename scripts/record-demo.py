@@ -11,15 +11,18 @@ helper stamps with):
   - Spotify's player state, polled over AppleScript
   - the menu bar and the notification banner, grabbed with `screencapture -x`
 
-`render` then draws those recordings into frames with PIL and encodes an MP4
-and a GIF with ffmpeg. Long waits (a Reminders alarm can take a minute) are cut
-out, so the video is short while every event in it keeps its real timing.
+`render` then draws those recordings into frames with PIL, follows them with a
+short tour of the app from the window screenshots in docs/images (see TOUR),
+and encodes an MP4 and a GIF with ffmpeg. Long waits (a Reminders alarm can
+take a minute) are cut out, so the video is short while every event in it keeps
+its real timing.
 
     python3 scripts/record-demo.py record --app dist/Sonar.app --work /tmp/sonar-demo
     python3 scripts/record-demo.py render --work /tmp/sonar-demo --out docs/images/sonar-demo
 
-Only two screen regions are ever kept: the Sonar menu-bar item and, while a
-notification is up, the banner. Everything else on the screen is discarded.
+Only two screen regions are ever kept: the Sonar menu-bar item and, on grabs
+that match the demo's own banner, the banner. Everything else on the screen is
+discarded.
 
 DESTRUCTIVE IN THE SAME WAYS AS system-sounds-smoke.py: it relaunches Sonar on
 the Instant preset (restoring the previous settings after), plays sounds out
@@ -51,13 +54,29 @@ sys.modules["system_sounds_smoke"] = smoke
 _spec.loader.exec_module(smoke)
 
 # Screen regions, in screen pixels of the main display (2560x1440 at 1x on the
-# recording machine). Pass --menu-item / --banner to adapt to another layout.
+# recording machine). Edit these to adapt to another layout.
 GRAB = (1850, 0, 710, 240)  # x, y, w, h: covers both regions below in one shot
-MENU_ITEM = (1892, 0, 136, 28)
+MENU_ITEM = (1892, 0, 136, 28)  # fallback; the live position is read at record time
 BANNER = (2200, 46, 346, 76)
 
 REMINDER = "Sonar demo"
-SPEECH = "Hey, here's a quick clip from another app."
+SPEECH = "Quick clip from another app."
+
+# After the live run, a short tour of the real app, from screenshots in
+# docs/images (window captures, so nothing else on the screen is in them).
+# `focus` is a rectangle in the screenshot's pixels to ring; with `scroll`, the
+# view also scrolls down to it, continuing from where the previous stop left
+# the same screenshot.
+TOUR = [
+    {"image": "menu-bar-player.png", "seconds": 2.0, "panel": True,
+     "caption": "Your track, in the menu bar.", "sub": "Click Sonar for artwork and playback controls."},
+    {"image": "auto-pause-pane.png", "seconds": 2.0, "focus": (221, 480, 760, 601),
+     "caption": "Choose how it pauses.", "sub": "Fade eases the music down and back up. Instant cuts it in the moment."},
+    {"image": "auto-pause-pane.png", "seconds": 2.8, "focus": (221, 1019, 760, 1091), "scroll": True,
+     "caption": "One switch for system sounds.", "sub": "Auto-Pause › Ignore Apple system sounds. On by default."},
+]
+TOUR_SCALE = 0.78  # settings screenshots, shown at one scale so stops on the same image line up
+XFADE = 0.25  # seconds of crossfade between scenes
 
 W, H, FPS = 1280, 720, 30
 FONT = "/System/Library/Fonts/SFNS.ttf"
@@ -148,6 +167,30 @@ class Recorder:
             time.sleep(0.02)
         return None
 
+    def first_log_after(self, t: float, prefix: str, timeout: float) -> float | None:
+        deadline = self.now() + timeout
+        while self.now() < deadline:
+            for at, line in list(self.log):
+                if at >= t and line.startswith(prefix):
+                    return at
+            time.sleep(0.02)
+        return None
+
+    @staticmethod
+    def menu_item_region() -> tuple[int, int, int, int]:
+        """Sonar's menu-bar item, where it is right now: its width follows the
+        track title, so a fixed rectangle would clip it or show a neighbour."""
+        out = smoke.osa('tell application "System Events" to tell process "Sonar" to '
+                        'get {position, size} of menu bar item 1 of menu bar 2')
+        try:
+            x, y, w, h = (int(v) for v in out.split(", "))
+        except ValueError:
+            return MENU_ITEM
+        gx, _, gw, _ = GRAB
+        if x < gx or x + w > gx + gw:
+            return MENU_ITEM
+        return (x, 0, w, 28)
+
     def run(self) -> None:
         run = smoke.Run(argparse.Namespace(app=self.args.app, trials=1))
         run.tmp = self.work / "tmp"
@@ -183,12 +226,13 @@ class Recorder:
             for t in threads:
                 t.start()
             time.sleep(1.5)
+            self.menu_item = self.menu_item_region()
 
             # 1. Baseline.
             t = self.now()
-            time.sleep(3.0)
+            time.sleep(1.6)
             self.segment(t, self.now(), "Spotify is playing.",
-                         "Sonar listens for other apps and pauses the music when one makes sound.")
+                         "Sonar pauses it whenever another app makes sound.")
 
             # 2. A real notification. Reminders alarms fire on the minute, so the
             # wait is cut out of the video; the sound is the anchor.
@@ -199,28 +243,12 @@ class Recorder:
             at = self.first_audio_after(t, smoke.SYSTEM_PLAYERS, 75)
             if at is None:
                 raise SystemExit("The reminder never played a sound.")
-            time.sleep(4.0)
+            time.sleep(3.0)
             self.marks["notification"] = at
-            self.segment(at - 1.2, at + 4.0, "A notification arrives.",
-                         "macOS plays its sound through systemsoundserverd. The music keeps playing.")
+            self.segment(at - 0.6, at + 2.6, "A notification arrives.",
+                         "It's an Apple system sound, so the music keeps playing.")
 
-            # 3. An alert beep.
-            run.ensure_playing()
-            time.sleep(1.0)
-            t = self.now()
-            subprocess.Popen([str(run.helper), "beep"])
-            at = self.first_audio_after(t, smoke.SYSTEM_PLAYERS, 5) or t
-            time.sleep(3.0)
-            self.segment(at - 1.0, at + 3.0, "An alert beep.", "Also an Apple system sound. Still playing.")
-
-            # 4. The screenshot shutter.
-            t = self.now()
-            subprocess.run(["screencapture", str(run.tmp / "demo-shot.png")])
-            at = self.first_audio_after(t, smoke.SYSTEM_PLAYERS, 5) or t
-            time.sleep(3.0)
-            self.segment(at - 1.0, at + 3.0, "The screenshot shutter.", "Still playing.")
-
-            # 5. A short clip from an ordinary app.
+            # 3. A short clip from an ordinary app.
             run.ensure_playing()
             time.sleep(1.5)
             t = self.now()
@@ -229,9 +257,10 @@ class Recorder:
             # Speech synthesis takes a second or more to start; anchor on the
             # moment the audio really began, not on the command.
             at = self.first_audio_after(t, ("/say",), 1) or t
-            time.sleep(3.0)
-            self.segment(at - 1.0, end + 3.0, "Another app plays a short clip.",
-                         "However short, app audio counts: Sonar pauses Spotify, then resumes it.")
+            back = self.first_log_after(end, "restored", 5) or end + 1.0
+            time.sleep(1.0)
+            self.segment(at - 0.6, back + 0.9, "Another app plays a short clip.",
+                         "Sonar pauses Spotify, then resumes it the moment it stops.")
         finally:
             self.stop.set()
             if getattr(self, "watcher", None) is not None:
@@ -250,7 +279,7 @@ class Recorder:
         (self.work / "events.json").write_text(json.dumps({
             "track": track, "audio": self.audio, "log": self.log, "spotify": self.spotify,
             "grabs": self.grabs, "segments": self.segments, "marks": self.marks,
-            "grab_region": GRAB, "menu_item": MENU_ITEM, "banner": BANNER,
+            "grab_region": GRAB, "menu_item": getattr(self, "menu_item", MENU_ITEM), "banner": BANNER,
         }, indent=1))
         print(f"recorded {len(self.grabs)} grabs, {len(self.audio)} audio transitions, "
               f"{len(self.log)} log lines into {self.work}")
@@ -340,7 +369,6 @@ class Renderer:
         self.art = None
         if (work / "artwork.jpg").exists():
             self.art = self.rounded(Image.open(work / "artwork.jpg").convert("RGB").resize((300, 300), Image.LANCZOS), 18)
-        self.logo = Image.open(ROOT / "logo/icon-512.png").convert("RGBA")
         self.bg = self.gradient()
         self.f = {
             "h1": font(64, "Bold"), "h2": font(30, "Semibold"), "cap": font(34, "Semibold"),
@@ -383,31 +411,74 @@ class Renderer:
 
     # -- scenes
 
-    def title_card(self, p: float, outro: bool = False):
+    def caption(self, d, seg: dict, seg_t: float, length: float) -> None:
+        a = ease(seg_t * 5) * ease((length - seg_t) * 5 + 0.3)
+        d.text((W // 2, 636), seg["caption"], font=self.f["cap"], fill=mix(BG_BOTTOM, TEXT, a), anchor="mm")
+        d.text((W // 2, 680), seg["sub"], font=self.f["sub"], fill=mix(BG_BOTTOM, DIM, a), anchor="mm")
+        total = len(self.ev["segments"]) + len(TOUR)
+        for i in range(total):
+            cx = W // 2 - (total - 1) * 9 + i * 18
+            d.ellipse((cx - 3, 704, cx + 3, 710), fill=TEXT if i == self.seg_index else FAINT)
+
+    def shot(self, name: str):
+        key = f"tour:{name}"
+        if key not in self.cache:
+            self.cache[key] = self.Image.open(ROOT / "docs/images" / name).convert("RGB")
+        return self.cache[key]
+
+    def card(self, img, src, x: int, y: int, radius: int = 12) -> None:
+        """Paste `src` with rounded corners and a soft shadow at (x, y)."""
+        from PIL import ImageDraw, ImageFilter
+
+        shadow = self.Image.new("RGBA", (src.width + 60, src.height + 60), (0, 0, 0, 0))
+        mask = self.Image.new("L", shadow.size, 0)
+        ImageDraw.Draw(mask).rounded_rectangle((30, 36, 30 + src.width, 36 + src.height), radius, fill=150)
+        shadow.putalpha(mask.filter(ImageFilter.GaussianBlur(14)))
+        img.paste(shadow, (x - 30, y - 30), shadow)
+        r = self.rounded(src, radius)
+        img.paste(r, (x, y), r)
+
+    def tour_frame(self, stop: dict, p: float, seg_t: float, length: float):
         from PIL import ImageDraw
 
         img = self.bg.copy()
-        d = ImageDraw.Draw(img)
-        a = ease(p * 3) if not outro else ease(p * 3)
-        logo = self.logo.resize((150, 150), self.Image.LANCZOS)
-        y0 = int(150 - 20 * (1 - a))
-        img.paste(logo, (W // 2 - 75, y0), logo)
-        d.text((W // 2, y0 + 190), "Sonar", font=self.f["h1"], fill=mix(BG_TOP, TEXT, a), anchor="mm")
-        if not outro:
-            d.text((W // 2, y0 + 255), "Notifications don't pause your music.", font=self.f["h2"],
-                   fill=mix(BG_TOP, TEXT, ease(p * 3 - 0.4)), anchor="mm")
-            d.text((W // 2, y0 + 300), "Every other sound still does, however short.", font=self.f["sub"],
-                   fill=mix(BG_TOP, DIM, ease(p * 3 - 0.8)), anchor="mm")
+        src = self.shot(stop["image"])
+        if stop.get("panel"):
+            # The real menu-bar item, with the player hanging under it.
+            last = self.tl.grabs[-1][1] if self.tl.grabs else None
+            item = self.grab(last, self.ev["menu_item"])
+            strip = item.getpixel((item.width - 1, item.height // 2)) if item is not None else (8, 9, 12)
+            d = ImageDraw.Draw(img, "RGBA")
+            d.rectangle((0, 0, W, 52), fill=strip)
+            if item is not None:
+                big = item.resize((item.width * 3 // 2, item.height * 3 // 2), self.Image.LANCZOS)
+                img.paste(big, (W // 2 - big.width // 2, 5))
+            k = 1.45 + 0.05 * ease(p)
+            panel = src.resize((int(src.width * k), int(src.height * k)), self.Image.LANCZOS)
+            drop = int(18 * (1 - ease(seg_t * 4)))
+            self.card(img, panel, W // 2 - panel.width // 2, 70 - drop, 18)
         else:
-            lines = [
-                ("Ignore Apple system sounds", TEXT, self.f["h2"]),
-                ("On by default. Identified by the process that plays the sound, never by its length.", DIM, self.f["sub"]),
-                ("github.com/Kathir-D/Sonar", GREEN, self.f["mono"]),
-            ]
-            y = y0 + 255
-            for i, (text, colour, f) in enumerate(lines):
-                d.text((W // 2, y), text, font=f, fill=mix(BG_TOP, colour, ease(p * 3 - 0.3 * (i + 1))), anchor="mm")
-                y += 46
+            area_h = 540
+            view_h = int(area_h / TOUR_SCALE)
+            top = stop["_from"]
+            fx0, fy0, fx1, fy1 = stop["focus"]
+            if stop.get("scroll"):
+                target = min(max((fy0 + fy1) // 2 - view_h // 2, 0), src.height - view_h)
+                top = int(top + (target - top) * ease(p * 1.8))
+            stop["_to"] = top
+            crop = src.crop((0, top, src.width, min(top + view_h, src.height)))
+            out = crop.resize((int(crop.width * TOUR_SCALE), int(crop.height * TOUR_SCALE)), self.Image.LANCZOS)
+            x, y = W // 2 - out.width // 2, 62 + (area_h - out.height) // 2
+            self.card(img, out, x, y)
+            ring = ease((p - (0.55 if stop.get("scroll") else 0.25)) * 4)
+            if ring > 0:
+                d = ImageDraw.Draw(img, "RGBA")
+                pad = 6
+                d.rounded_rectangle((x + fx0 * TOUR_SCALE - pad, y + (fy0 - top) * TOUR_SCALE - pad,
+                                     x + fx1 * TOUR_SCALE + pad, y + (fy1 - top) * TOUR_SCALE + pad),
+                                    12, outline=(*BLUE, int(255 * ring)), width=3)
+        d = ImageDraw.Draw(img, "RGBA")
+        self.caption(d, stop, seg_t, length)
         return img
 
     def frame(self, t: float, seg: dict, seg_p: float, seg_t: float):
@@ -459,7 +530,7 @@ class Renderer:
         x0, x1, top = 480, 1240, 78
         d.rounded_rectangle((x0, top, x1, 590), 22, fill=PANEL, outline=PANEL_EDGE)
         d.text((x0 + 24, top + 22), "WHO IS MAKING SOUND", font=self.f["tiny"], fill=FAINT)
-        span = 7.0
+        span = 5.0
         lx0, lx1 = x0 + 222, x1 - 30
 
         def tx(at: float) -> float:
@@ -536,13 +607,14 @@ class Renderer:
             alpha = int(255 * ease((t - at) * 4))
             d.text((x0 + 24, 414 + i * 30), text, font=self.f["mono"], fill=(*colour, alpha))
 
-        # The real notification banner, only on grabs where it is actually on
-        # screen: what sits under it otherwise is the desktop, which is not
-        # this video's to show.
+        # The real notification banner, only on grabs that show *our* banner:
+        # anything else in that region (the desktop, another app's banner) is
+        # not this video's to show.
         n = self.ev["marks"].get("notification")
         shown_at = self.banner_from
-        if n is not None and shown_at is not None and shown_at <= t <= n + 3.8:
-            banner = self.grab(self.tl.grab_at(t), self.ev["banner"])
+        name = self.tl.grab_at(t)
+        if n is not None and shown_at is not None and shown_at <= t <= n + 3.8 and self.is_banner(name):
+            banner = self.grab(name, self.ev["banner"])
             if banner is not None:
                 k = ease((t - shown_at) * 4) * ease((n + 3.8 - t) * 3)
                 b = self.rounded(banner, 14)
@@ -552,34 +624,35 @@ class Renderer:
                 b.putalpha(b.getchannel("A").point(lambda v: int(v * k)))
                 img.paste(b, (x, 60), b)
 
-        # Caption.
-        a = ease(seg_t * 3) * ease((seg["end"] - seg["start"] - seg_t) * 3 + 0.3)
-        d.text((W // 2, 636), seg["caption"], font=self.f["cap"], fill=mix(BG_BOTTOM, TEXT, a), anchor="mm")
-        d.text((W // 2, 680), seg["sub"], font=self.f["sub"], fill=mix(BG_BOTTOM, DIM, a), anchor="mm")
-        # Progress dots.
-        for i in range(len(self.ev["segments"])):
-            cx = W // 2 - (len(self.ev["segments"]) - 1) * 9 + i * 18
-            on = i == self.seg_index
-            d.ellipse((cx - 3, 704, cx + 3, 710), fill=TEXT if on else FAINT)
+        self.caption(d, seg, seg_t, seg["end"] - seg["start"])
         return img
 
-    def find_banner(self) -> float | None:
-        """When the banner first appears: the first grab after the sound whose
-        banner region differs clearly from the last grab before it."""
+    def is_banner(self, name: str | None) -> bool:
+        """Whether this grab shows the demo's banner: it must closely match the
+        grab taken 1.5 s after the sound, when the banner has settled."""
         from PIL import ImageChops, ImageStat
 
+        if name is None or self.banner_ref is None:
+            return False
+        key = f"is_banner:{name}"
+        if key not in self.cache:
+            diff = ImageStat.Stat(ImageChops.difference(self.banner_ref, self.grab(name, self.ev["banner"]))).mean
+            self.cache[key] = sum(diff) / 3 < 8
+        return self.cache[key]
+
+    def find_banner(self) -> float | None:
+        """When the banner first appears: the first grab after the sound that
+        matches the settled banner."""
         n = self.ev["marks"].get("notification")
+        self.banner_ref = None
         if n is None:
             return None
-        before = self.tl.grab_at(n - 0.2)
-        if before is None:
+        settled = self.tl.grab_at(n + 1.5)
+        if settled is None:
             return None
-        ref = self.grab(before, self.ev["banner"])
+        self.banner_ref = self.grab(settled, self.ev["banner"]).copy()
         for gt, name in self.tl.grabs:
-            if gt < n or gt > n + 3:
-                continue
-            diff = ImageStat.Stat(ImageChops.difference(ref, self.grab(name, self.ev["banner"]))).mean
-            if sum(diff) / 3 > 25:
+            if n <= gt <= n + 3 and self.is_banner(name):
                 return gt
         return None
 
@@ -595,23 +668,38 @@ class Renderer:
             if seg["start"] < prev["end"]:
                 seg["start"] = prev["end"]
         n = 0
+        last = None
 
-        def emit(img) -> None:
-            nonlocal n
-            img.convert("RGB").save(frames_dir / f"{n:05d}.png", compress_level=1)
+        def emit(img, fade_from=None, k: float = 1.0) -> None:
+            nonlocal n, last
+            img = img.convert("RGB")
+            if fade_from is not None and k < 1.0:
+                img = self.Image.blend(fade_from, img, ease(k))
+            img.save(frames_dir / f"{n:05d}.png", compress_level=1)
+            last = img
             n += 1
 
-        intro, outro = 3.0, 4.0
-        for i in range(int(intro * FPS)):
-            emit(self.title_card(i / (intro * FPS)))
+        # Every scene crossfades in from the last frame of the one before; the
+        # first from the background and the end back to it, so the GIF loops.
         for idx, seg in enumerate(self.ev["segments"]):
             self.seg_index = idx
             length = seg["end"] - seg["start"]
+            prev = last if last is not None else self.bg
             for i in range(int(length * FPS)):
                 st = i / FPS
-                emit(self.frame(seg["start"] + st, seg, st / length, st))
-        for i in range(int(outro * FPS)):
-            emit(self.title_card(i / (outro * FPS), outro=True))
+                emit(self.frame(seg["start"] + st, seg, st / length, st), prev, st / XFADE)
+        for j, stop in enumerate(TOUR):
+            self.seg_index = len(self.ev["segments"]) + j
+            before = TOUR[j - 1] if j else None
+            stop["_from"] = before["_to"] if before and before["image"] == stop["image"] else 0
+            length = stop["seconds"]
+            prev = last
+            for i in range(int(length * FPS)):
+                st = i / FPS
+                emit(self.tour_frame(stop, st / length, st, length), prev, st / XFADE)
+        tail = last
+        for i in range(int(0.4 * FPS)):
+            emit(self.bg, tail, i / (0.4 * FPS))
 
         out.parent.mkdir(parents=True, exist_ok=True)
         mp4 = out.with_suffix(".mp4")
@@ -620,7 +708,7 @@ class Renderer:
                         "-i", str(frames_dir / "%05d.png"), "-c:v", "libx264", "-preset", "slow", "-crf", "20",
                         "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(mp4)], check=True)
         palette = self.work / "palette.png"
-        scale = f"fps=15,scale={gif_width}:-1:flags=lanczos"
+        scale = f"fps=12,scale={gif_width}:-1:flags=lanczos"
         subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(mp4),
                         "-vf", f"{scale},palettegen=max_colors=128:stats_mode=diff", str(palette)], check=True)
         subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(mp4), "-i", str(palette),
