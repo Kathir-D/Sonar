@@ -790,6 +790,10 @@ struct AutoPausePreferencesView: View {
     /// No `step:` on purpose: macOS draws a tick per step, and at 0.1 s over
     /// five seconds the track turns into a dotted line. The model snaps the
     /// value instead, so the numbers stay tidy without the noise.
+    ///
+    /// The number is a `SliderNumberField`: double-click it to type a value
+    /// instead of dragging. It writes the same binding the slider does, so
+    /// the model's snapping and the Edit-menu undo entry apply to both.
     private func sliderRow(
         title: String,
         subtitle: String? = nil,
@@ -802,9 +806,12 @@ struct AutoPausePreferencesView: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(title)
                 Spacer()
-                Text(value.wrappedValue, format: .number.precision(.fractionLength(decimals)))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
+                SliderNumberField(
+                    value: value,
+                    range: range,
+                    decimals: decimals,
+                    label: title
+                )
                 Text(unit)
                     .foregroundStyle(.secondary)
             }

@@ -121,7 +121,20 @@ struct MenuBarPreferencesView: View {
                             HStack {
                                 Text("Max Width")
                                 Spacer()
-                                Text("\(Int(model.maxStatusItemWidth)) pt")
+                                // Double-click the number to type it.
+                                SliderNumberField(
+                                    value: Binding(
+                                        get: { Double(model.maxStatusItemWidth) },
+                                        set: { model.maxStatusItemWidth = CGFloat($0) }
+                                    ),
+                                    range: 40...300,
+                                    decimals: 0,
+                                    step: 1,
+                                    fontSize: NSFont.smallSystemFontSize,
+                                    width: 38,
+                                    label: "Max Width"
+                                )
+                                Text("pt")
                                     .foregroundStyle(.secondary)
                                     .font(.caption)
                             }

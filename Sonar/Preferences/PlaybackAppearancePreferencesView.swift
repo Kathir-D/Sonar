@@ -39,7 +39,17 @@ struct PlaybackAppearancePreferencesView: View {
                             HStack {
                                 Text("Blur Intensity")
                                 Spacer()
-                                Text(String(format: "%.0f%%", model.blurIntensity * 100))
+                                // Double-click the number to type it.
+                                SliderNumberField(
+                                    value: $model.blurIntensity,
+                                    range: 0...1,
+                                    decimals: 0,
+                                    displayScale: 100,
+                                    fontSize: NSFont.smallSystemFontSize,
+                                    width: 32,
+                                    label: "Blur Intensity"
+                                )
+                                Text("%")
                                     .foregroundStyle(.secondary)
                                     .font(.caption)
                             }
@@ -50,7 +60,17 @@ struct PlaybackAppearancePreferencesView: View {
                             HStack {
                                 Text("Hover Tint Opacity")
                                 Spacer()
-                                Text(String(format: "%.0f%%", model.hoverTintOpacity * 100))
+                                // Double-click the number to type it.
+                                SliderNumberField(
+                                    value: $model.hoverTintOpacity,
+                                    range: 0...1,
+                                    decimals: 0,
+                                    displayScale: 100,
+                                    fontSize: NSFont.smallSystemFontSize,
+                                    width: 32,
+                                    label: "Hover Tint Opacity"
+                                )
+                                Text("%")
                                     .foregroundStyle(.secondary)
                                     .font(.caption)
                             }
