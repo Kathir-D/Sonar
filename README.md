@@ -1,7 +1,5 @@
 > [!WARNING]
-> **THIS WAS A VERY VIEBCODED PROJECT BECAUSE NO AUTO PAUSE SOFTWARE WORKED FAST ENOUGH**
-> 
-> Don't be stupid- expect bugs, weird implementations, and most likely not much support.
+> expect bugs and most likely not much support.
 
 
 <div align="center">
