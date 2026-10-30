@@ -70,32 +70,6 @@ How it works, in depth: [docs/HOW-AUTOPAUSE-WORKS.md](docs/HOW-AUTOPAUSE-WORKS.m
 
 <img src="docs/images/auto-pause-pane.png" alt="The Auto-Pause pane: permissions, enable toggle, live state, presets, and the app list" width="410">
 
-## Troubleshooting
-
-- **Auto-Pause won't switch on:** one of the two permissions is missing. If **Grant…** shows no
-  prompt, enable it in System Settings, then press **Re-check**. Spotify has to be running for the
-  Automation prompt to appear.
-- **"Process polling only":** the audio tap isn't getting audio, so Sonar can't tell silence from
-  sound. Press **Re-check**, or toggle Screen & System Audio Recording off and on.
-- **Empty menu bar:** check Spotify is playing and the Automation permission is granted.
-- **Logs:** the path is shown at the bottom of the Auto-Pause pane (usually
-  `~/Library/Containers/com.KathirD.sonar/Data/Library/Logs/Sonar/sonar.log`).
-- **Known limitation:** a pause you make while Sonar is already holding the music looks the same
-  as Sonar's own, so it will still resume.
-
-## Development
-
-Requires Xcode 16+ and Swift 6.
-
-```sh
-swift test --package-path Packages/AutoPauseEngine   # engine tests
-scripts/build-app.sh                                 # Release build → dist/Sonar.app
-```
-
-The Xcode project is still named `SpotMenu.xcodeproj`; build the `Sonar` scheme. Releases are
-covered in [docs/RELEASING.md](docs/RELEASING.md). PRs are welcome. Please use conventional commits
-and keep the upstream UI unchanged.
-
 ## Credits
 
 Fork of [SpotMenu](https://github.com/kmikiy/SpotMenu) by [@kmikiy](https://github.com/kmikiy)
